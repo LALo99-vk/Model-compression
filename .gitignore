@@ -16,3 +16,12 @@ results/
 
 # System
 .DS_Store
+
+
+# Ignore unwanted root files
+.txt
+create_real_dataset.py
+demo_test_script.py
+realistic_dataset_generator.py
+
+frontend2/node_modules/

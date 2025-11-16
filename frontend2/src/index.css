@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0b1220;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #122033;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00F3FF;
+}
+
+/* Custom range slider styles */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-track {
+  background: #0b1220;
+  height: 6px;
+  border-radius: 3px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #00F3FF, #FF00D0);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+}
+
+input[type="range"]::-moz-range-track {
+  background: #0b1220;
+  height: 6px;
+  border-radius: 3px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  border: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: linear-gradient(45deg, #00F3FF, #FF00D0);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+}
+
+/* Animations */
+@keyframes glow {
+  0%, 100% {
+    text-shadow: 0 0 20px rgba(0, 243, 255, 0.5);
+  }
+  50% {
+    text-shadow: 0 0 30px rgba(0, 243, 255, 0.8);
+  }
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+/* Particle animations */
+@keyframes particle-float {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-20px) translateX(10px);
+    opacity: 1;
+  }
+}
+
+.animate-particle {
+  animation: particle-float 4s ease-in-out infinite;
+}
+
+/* Neural network pulse */
+@keyframes neural-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-neural {
+  animation: neural-pulse 2s ease-in-out infinite;
+}
