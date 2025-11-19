@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Scissors, Compass as Compress, FlaskRound as Flask, Play, CheckCircle, Clock, ArrowRight, Zap, AlertCircle } from 'lucide-react';
 import { compressionService } from '../../api/services/compressionService';
 import { useToast } from '../ui/ToastContainer';
+import { useAppStore } from '../../store/useAppStore';
 
 interface CompressionMethod {
   id: string;
@@ -42,15 +43,59 @@ const Compression = () => {
     progress: 0,
     timeElapsed: 0
   });
-  const [modelInfo, setModelInfo] = useState<ModelInfo>({
-    original: {
-      size: 25.6,
-      parameters: 1250000,
-      architecture: 'CNN'
-    }
-  });
+  const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [parameters, setParameters] = useState<Record<string, any>>({});
   const { showSuccess, showError } = useToast();
+  const selectedDatasetName = useAppStore((s) => s.selectedDatasetName);
+  const selectedModelConfig = useAppStore((s) => s.selectedModel);
+
+  useEffect(() => {
+    loadModelInfo();
+  }, []);
+
+  const loadModelInfo = async () => {
+    try {
+      // Try to get compression info if compression was done
+      const compressionInfo = await compressionService.info().catch(() => null);
+      
+      // Get model config to determine architecture
+      const modelType = selectedModelConfig?.model_type || 'unknown';
+      const architecture = modelType === 'cnn' ? 'CNN' : modelType === 'rnn' ? 'RNN' : modelType === 'decision_tree' ? 'Decision Tree' : 'Unknown';
+      
+      // Try to get file size from backend (we'll need to add an endpoint or calculate from compression info)
+      let originalSize = 0;
+      let originalParams = 0;
+      
+      if (compressionInfo?.result) {
+        originalSize = compressionInfo.result.original_size_mb || 0;
+        originalParams = compressionInfo.result.original_parameters || 0;
+      }
+      
+      setModelInfo({
+        original: {
+          size: originalSize,
+          parameters: originalParams,
+          architecture: architecture
+        },
+        compressed: compressionInfo?.result ? {
+          size: compressionInfo.result.compressed_size_mb || 0,
+          parameters: compressionInfo.result.compressed_parameters || 0,
+          reduction: compressionInfo.result.size_reduction_percent || 0
+        } : undefined
+      });
+    } catch (error) {
+      // If no compression info, just set basic info
+      const modelType = selectedModelConfig?.model_type || 'unknown';
+      const architecture = modelType === 'cnn' ? 'CNN' : modelType === 'rnn' ? 'RNN' : modelType === 'decision_tree' ? 'Decision Tree' : 'Unknown';
+      setModelInfo({
+        original: {
+          size: 0,
+          parameters: 0,
+          architecture: architecture
+        }
+      });
+    }
+  };
 
   const methods: CompressionMethod[] = [
     {
@@ -93,27 +138,13 @@ const Compression = () => {
     if (compressionStatus.status === 'compressing') {
       const interval = setInterval(() => {
         setCompressionStatus(prev => {
-          const newProgress = Math.min(prev.progress + 5, 100);
+          const newProgress = Math.min(prev.progress + 2, 95); // Don't go to 100, wait for backend
           const newTimeElapsed = prev.timeElapsed + 1;
-          const isCompleted = newProgress >= 100;
-          
-          if (isCompleted) {
-            // Simulate compression results
-            setModelInfo(prevInfo => ({
-              ...prevInfo,
-              compressed: {
-                size: prevInfo.original.size * 0.35, // 65% reduction
-                parameters: Math.floor(prevInfo.original.parameters * 0.4),
-                reduction: 65
-              }
-            }));
-          }
           
           return {
             ...prev,
             progress: newProgress,
-            timeElapsed: newTimeElapsed,
-            status: isCompleted ? 'completed' : 'compressing'
+            timeElapsed: newTimeElapsed
           };
         });
       }, 1000);
@@ -125,10 +156,10 @@ const Compression = () => {
   useEffect(() => {
     if (compressionStatus.status === 'completed') {
       const methodName = methods.find(m => m.id === compressionStatus.method)?.name || 'Compression';
-      const detail = modelInfo.compressed?.reduction ? `-${modelInfo.compressed.reduction}% size` : undefined;
+      const detail = modelInfo?.compressed?.reduction ? `-${modelInfo.compressed.reduction}% size` : undefined;
       showSuccess(`${methodName} Completed`, detail);
     }
-  }, [compressionStatus.status, compressionStatus.method, modelInfo.compressed, showSuccess]);
+  }, [compressionStatus.status, compressionStatus.method, modelInfo?.compressed, showSuccess]);
 
   const getMethodIcon = (icon: string) => {
     switch (icon) {
@@ -169,14 +200,26 @@ const Compression = () => {
     });
 
     try {
+      let result;
       if (selectedMethod === 'pruning') {
-        await compressionService.compress({ method: 'pruning', pruning_amount: parameters.pruningAmount ?? 0.3 });
+        result = await compressionService.compress({ method: 'pruning', pruning_amount: parameters.pruningAmount ?? 0.3 });
       } else if (selectedMethod === 'quantization') {
-        await compressionService.compress({ method: 'quantization', quantization_bits: parameters.bitWidth ?? 8 });
+        result = await compressionService.compress({ method: 'quantization', quantization_bits: parameters.bitWidth ?? 8 });
       } else if (selectedMethod === 'distillation') {
-        await compressionService.compress({ method: 'distillation', distillation_temperature: parameters.temperature ?? 3, distillation_alpha: parameters.alpha ?? 0.5 });
+        result = await compressionService.compress({ method: 'distillation', distillation_temperature: parameters.temperature ?? 3, distillation_alpha: parameters.alpha ?? 0.5 });
       }
-      showSuccess('Compression Started');
+      
+      // Update compression status to completed
+      setCompressionStatus(prev => ({
+        ...prev,
+        status: 'completed',
+        progress: 100
+      }));
+      
+      // Reload model info to get compression results
+      await loadModelInfo();
+      
+      showSuccess('Compression Completed', 'Model successfully compressed');
     } catch (error) {
       setCompressionStatus(prev => ({
         ...prev,
@@ -358,7 +401,7 @@ const Compression = () => {
   };
 
   const renderBeforeAfterComparison = () => {
-    if (!modelInfo.compressed) return null;
+    if (!modelInfo || !modelInfo.compressed) return null;
 
     return (
       <div className="bg-[#121628]/50 border border-[#122033] rounded-xl p-8">
@@ -451,6 +494,13 @@ const Compression = () => {
         <p className="text-lg text-[#9BD8FF]">
           Reduce model size while maintaining accuracy
         </p>
+        {selectedDatasetName && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={`Dataset: ${selectedDatasetName} | Model: ${modelInfo?.original.architecture || 'Unknown'}`}>
+              Dataset: {selectedDatasetName} | Model: {modelInfo?.original.architecture || 'Unknown'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Method Selection */}

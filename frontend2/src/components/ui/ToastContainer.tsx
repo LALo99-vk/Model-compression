@@ -1,58 +1,150 @@
-import React, { useState, useCallback } from 'react';
-import Toast, { ToastProps } from './Toast';
+import React, { useState, useCallback, useEffect } from 'react';
+import { ToastProps } from './Toast';
 
 interface ToastData extends Omit<ToastProps, 'onClose'> {
   id: string;
 }
 
 export interface ToastContextType {
-  showToast: (toast: Omit<ToastData, 'id'>) => void;
-  showSuccess: (title: string, message?: string) => void;
-  showError: (title: string, message?: string) => void;
-  showInfo: (title: string, message?: string) => void;
-  showWarning: (title: string, message?: string) => void;
+  showToast: (toast: Omit<ToastData, 'id'>) => string;
+  showSuccess: (title: string, message?: string) => string;
+  showError: (title: string, message?: string) => string;
+  showInfo: (title: string, message?: string) => string;
+  showWarning: (title: string, message?: string) => string;
 }
 
 const ToastContainer: React.FC = () => {
   const [toasts, setToasts] = useState<ToastData[]>([]);
 
-  const removeToast = useCallback((id: string) => {
+  const removeToast = (id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
-  }, []);
+  };
 
-  const showToast = useCallback((toast: Omit<ToastData, 'id'>) => {
+  const showToast = (toast: Omit<ToastData, 'id'>) => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { ...toast, id }]);
+    // Auto-remove toast after 5 seconds
+    setTimeout(() => removeToast(id), 5000);
+    return id;
+  };
+
+  const showSuccess = (title: string, message?: string) => {
+    return showToast({ type: 'success', title, message });
+  };
+
+  const showError = (title: string, message?: string) => {
+    return showToast({ type: 'error', title, message });
+  };
+
+  const showInfo = (title: string, message?: string) => {
+    return showToast({ type: 'info', title, message });
+  };
+
+  const showWarning = (title: string, message?: string) => {
+    return showToast({ type: 'warning', title, message });
+  };
+
+  // Export the functions to window for global access
+  useEffect(() => {
+    // @ts-ignore
+    window.showToast = showToast;
+    // @ts-ignore
+    window.showSuccess = showSuccess;
+    // @ts-ignore
+    window.showError = showError;
+    // @ts-ignore
+    window.showInfo = showInfo;
+    // @ts-ignore
+    window.showWarning = showWarning;
+
+    return () => {
+      // Cleanup
+      // @ts-ignore
+      delete window.showToast;
+      // @ts-ignore
+      delete window.showSuccess;
+      // @ts-ignore
+      delete window.showError;
+      // @ts-ignore
+      delete window.showInfo;
+      // @ts-ignore
+      delete window.showWarning;
+    };
   }, []);
 
-  const showSuccess = useCallback((title: string, message?: string) => {
-    showToast({ type: 'success', title, message });
-  }, [showToast]);
-
-  const showError = useCallback((title: string, message?: string) => {
-    showToast({ type: 'error', title, message });
-  }, [showToast]);
-
-  const showInfo = useCallback((title: string, message?: string) => {
-    showToast({ type: 'info', title, message });
-  }, [showToast]);
-
-  const showWarning = useCallback((title: string, message?: string) => {
-    showToast({ type: 'warning', title, message });
-  }, [showToast]);
-
   return (
-    <>
-      {toasts.map((toast, index) => (
-        <div
-          key={toast.id}
-          style={{ top: `${1 + index * 5}rem` }}
-          className="fixed right-4 z-50"
-        >
-          <Toast {...toast} onClose={removeToast} />
-        </div>
-      ))}
-    </>
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] w-full max-w-md px-4">
+      <div className="space-y-3">
+        {toasts.map((toast) => (
+          <div 
+            key={toast.id} 
+            className={`
+              w-full flex justify-center
+              animate-fade-in-down
+              transition-all duration-300
+            `}
+          >
+            <div className={`
+              w-full max-w-md bg-white dark:bg-gray-800 
+              rounded-lg shadow-lg
+              border-l-4 
+              ${toast.type === 'success' ? 'border-green-500' : 
+                toast.type === 'error' ? 'border-red-500' :
+                toast.type === 'warning' ? 'border-yellow-500' : 'border-blue-500'}
+              overflow-hidden
+            `}>
+              <div className="p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    {toast.type === 'success' && (
+                      <svg className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                    {toast.type === 'error' && (
+                      <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    )}
+                    {toast.type === 'warning' && (
+                      <svg className="h-6 w-6 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    )}
+                    {toast.type === 'info' && (
+                      <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="ml-3 w-0 flex-1 pt-0.5">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {toast.title}
+                    </p>
+                    {toast.message && (
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                        {toast.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="ml-4 flex-shrink-0 flex">
+                    <button
+                      onClick={() => removeToast(toast.id)}
+                      className="inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+                    >
+                      <span className="sr-only">Close</span>
+                      <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };
 
@@ -77,22 +169,25 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const showToast = useCallback((toast: Omit<ToastData, 'id'>) => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { ...toast, id }]);
-  }, []);
+    // Auto-remove toast after 5 seconds
+    setTimeout(() => removeToast(id), 5000);
+    return id;
+  }, [removeToast]);
 
   const showSuccess = useCallback((title: string, message?: string) => {
-    showToast({ type: 'success', title, message });
+    return showToast({ type: 'success', title, message });
   }, [showToast]);
 
   const showError = useCallback((title: string, message?: string) => {
-    showToast({ type: 'error', title, message });
+    return showToast({ type: 'error', title, message });
   }, [showToast]);
 
   const showInfo = useCallback((title: string, message?: string) => {
-    showToast({ type: 'info', title, message });
+    return showToast({ type: 'info', title, message });
   }, [showToast]);
 
   const showWarning = useCallback((title: string, message?: string) => {
-    showToast({ type: 'warning', title, message });
+    return showToast({ type: 'warning', title, message });
   }, [showToast]);
 
   const contextValue: ToastContextType = {
@@ -106,12 +201,77 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] p-4 space-y-3 w-[calc(100%-2rem)] max-w-md">
-        {toasts.map((toast) => (
-          <div key={toast.id}>
-            <Toast {...toast} onClose={removeToast} />
-          </div>
-        ))}
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] w-full max-w-md px-4">
+        <div className="space-y-3">
+          {toasts.map((toast) => (
+            <div 
+              key={toast.id}
+              className={`
+                w-full flex justify-center
+                animate-fade-in-down
+                transition-all duration-300
+              `}
+            >
+              <div className={`
+                w-full max-w-md bg-white dark:bg-gray-800 
+                rounded-lg shadow-lg
+                border-l-4 
+                ${toast.type === 'success' ? 'border-green-500' : 
+                  toast.type === 'error' ? 'border-red-500' :
+                  toast.type === 'warning' ? 'border-yellow-500' : 'border-blue-500'}
+                overflow-hidden
+              `}>
+                <div className="p-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      {toast.type === 'success' && (
+                        <svg className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                      {toast.type === 'error' && (
+                        <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      {toast.type === 'warning' && (
+                        <svg className="h-6 w-6 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      )}
+                      {toast.type === 'info' && (
+                        <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="ml-3 w-0 flex-1 pt-0.5">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {toast.title}
+                      </p>
+                      {toast.message && (
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                          {toast.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="ml-4 flex-shrink-0 flex">
+                      <button
+                        onClick={() => removeToast(toast.id)}
+                        className="inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+                      >
+                        <span className="sr-only">Close</span>
+                        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </ToastContext.Provider>
   );

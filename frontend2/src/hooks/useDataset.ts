@@ -3,11 +3,14 @@ import { useAppStore } from '../store/useAppStore';
 import { useToast } from '../components/ui/ToastContainer';
 
 export const useDataset = () => {
-  const { datasets, fetchDatasets, uploadDatasets, deleteDataset } = useAppStore((s) => ({
+  const { datasets, fetchDatasets, uploadDatasets, deleteDataset, selectedDatasetPath, selectedDatasetName, setSelectedDataset } = useAppStore((s) => ({
     datasets: s.datasets,
     fetchDatasets: s.fetchDatasets,
     uploadDatasets: s.uploadDatasets,
     deleteDataset: s.deleteDataset,
+    selectedDatasetPath: s.selectedDatasetPath,
+    selectedDatasetName: s.selectedDatasetName,
+    setSelectedDataset: s.setSelectedDataset,
   }));
   const { showSuccess, showError } = useToast();
   const [progress, setProgress] = useState(0);
@@ -45,6 +48,10 @@ export const useDataset = () => {
         return;
       }
       await uploadDatasets(files);
+      if (files.length > 0) {
+        const f = files[0];
+        setSelectedDataset({ filename: f.name, path: `uploads/${f.name}` });
+      }
       showSuccess('Upload Complete', 'Files uploaded successfully');
       setProgress(100);
     } catch (e: any) {
@@ -61,5 +68,5 @@ export const useDataset = () => {
     }
   };
 
-  return { datasets, progress, upload, remove };
+  return { datasets, progress, upload, remove, selectedDatasetPath, selectedDatasetName, setSelectedDataset };
 };

@@ -45,39 +45,23 @@ interface ComparisonData {
 }
 
 const Comparison = () => {
-  const [comparisonData, setComparisonData] = useState<ComparisonData>({
-    original: {
-      accuracy: 0.9234,
-      precision: 0.9187,
-      recall: 0.9056,
-      f1Score: 0.9121,
-      inferenceTime: 45.2,
-      modelSize: 25.6,
-      parameters: 1250000
-    },
-    compressed: {
-      accuracy: 0.9156,
-      precision: 0.9098,
-      recall: 0.8987,
-      f1Score: 0.9042,
-      inferenceTime: 11.9,
-      modelSize: 6.8,
-      parameters: 312500
-    },
-    improvements: {
-      sizeReduction: 73.5,
-      accuracyPreserved: 98.2,
-      speedImprovement: 3.8
-    }
-  });
+  const [comparisonData, setComparisonData] = useState<ComparisonData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showCelebration, setShowCelebration] = useState(true);
+  const [showCelebration, setShowCelebration] = useState(false);
 
-  const { showError, showSuccess } = useToast();
+  const { showError } = useToast();
+  
   useEffect(() => {
-    const timer = setTimeout(() => setShowCelebration(false), 3000);
-    return () => clearTimeout(timer);
+    loadComparison();
   }, []);
+
+  useEffect(() => {
+    if (comparisonData) {
+      setShowCelebration(true);
+      const timer = setTimeout(() => setShowCelebration(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [comparisonData]);
 
   const loadComparison = async () => {
     setLoading(true);
@@ -91,7 +75,7 @@ const Comparison = () => {
           f1Score: data.detailed_metrics.original?.f1_score ?? 0,
           inferenceTime: data.inference_time.original_ms,
           modelSize: data.file_size.original_mb,
-          parameters: 0,
+          parameters: data.detailed_metrics.original?.parameters ?? 0,
         },
         compressed: {
           accuracy: data.accuracy.compressed,
@@ -100,7 +84,7 @@ const Comparison = () => {
           f1Score: data.detailed_metrics.compressed?.f1_score ?? 0,
           inferenceTime: data.inference_time.compressed_ms,
           modelSize: data.file_size.compressed_mb,
-          parameters: 0,
+          parameters: data.detailed_metrics.compressed?.parameters ?? 0,
         },
         improvements: {
           sizeReduction: data.file_size.reduction_percent,
@@ -108,9 +92,11 @@ const Comparison = () => {
           speedImprovement: data.inference_time.speedup,
         },
       });
-      showSuccess('Comparison Refreshed');
     } catch (error) {
-      showError('Comparison Failed', (error as any)?.message ?? String(error));
+      // Don't show error if no comparison data exists yet
+      if ((error as any)?.response?.status !== 404) {
+        showError('Comparison Failed', (error as any)?.message ?? String(error));
+      }
     } finally {
       setLoading(false);
     }
@@ -142,47 +128,53 @@ const Comparison = () => {
     };
   };
 
-  const renderHeroStats = () => (
-    <div className="grid md:grid-cols-3 gap-8 mb-12">
-      <div className={`bg-[#121628]/50 border border-[#122033] rounded-xl p-8 text-center relative overflow-hidden ${showCelebration ? 'animate-pulse' : ''}`}>
-        <div className="absolute inset-0 bg-gradient-to-br from-[rgba(0,255,160,0.05)] to-transparent"></div>
-        <div className="relative z-10">
-          <TrendingDown className="w-12 h-12 text-[#00FFA0] mx-auto mb-4" />
-          <div className="text-4xl font-bold text-[#00FFA0] mb-2">
-            {comparisonData.improvements.sizeReduction}%
+  const renderHeroStats = () => {
+    if (!comparisonData) return null;
+    
+    return (
+      <div className="grid md:grid-cols-3 gap-8 mb-12">
+        <div className={`bg-[#121628]/50 border border-[#122033] rounded-xl p-8 text-center relative overflow-hidden ${showCelebration ? 'animate-pulse' : ''}`}>
+          <div className="absolute inset-0 bg-gradient-to-br from-[rgba(0,255,160,0.05)] to-transparent"></div>
+          <div className="relative z-10">
+            <TrendingDown className="w-12 h-12 text-[#00FFA0] mx-auto mb-4" />
+            <div className="text-4xl font-bold text-[#00FFA0] mb-2">
+              {comparisonData.improvements.sizeReduction.toFixed(1)}%
+            </div>
+            <div className="text-lg font-semibold text-[#E6FBFF] mb-1">Size Reduction</div>
+            <div className="text-sm text-[#9BD8FF]">Model is {comparisonData.improvements.sizeReduction.toFixed(1)}% smaller</div>
           </div>
-          <div className="text-lg font-semibold text-[#E6FBFF] mb-1">Size Reduction</div>
-          <div className="text-sm text-[#9BD8FF]">Model is 73% smaller</div>
         </div>
-      </div>
 
-      <div className={`bg-[#121628]/50 border border-[#122033] rounded-xl p-8 text-center relative overflow-hidden ${showCelebration ? 'animate-pulse' : ''}`}>
-        <div className="absolute inset-0 bg-gradient-to-br from-[rgba(0,243,255,0.05)] to-transparent"></div>
-        <div className="relative z-10">
-          <CheckCircle className="w-12 h-12 text-[#00F3FF] mx-auto mb-4" />
-          <div className="text-4xl font-bold text-[#00F3FF] mb-2">
-            {comparisonData.improvements.accuracyPreserved}%
+        <div className={`bg-[#121628]/50 border border-[#122033] rounded-xl p-8 text-center relative overflow-hidden ${showCelebration ? 'animate-pulse' : ''}`}>
+          <div className="absolute inset-0 bg-gradient-to-br from-[rgba(0,243,255,0.05)] to-transparent"></div>
+          <div className="relative z-10">
+            <CheckCircle className="w-12 h-12 text-[#00F3FF] mx-auto mb-4" />
+            <div className="text-4xl font-bold text-[#00F3FF] mb-2">
+              {comparisonData.improvements.accuracyPreserved.toFixed(1)}%
+            </div>
+            <div className="text-lg font-semibold text-[#E6FBFF] mb-1">Accuracy Preserved</div>
+            <div className="text-sm text-[#9BD8FF]">Minimal accuracy loss</div>
           </div>
-          <div className="text-lg font-semibold text-[#E6FBFF] mb-1">Accuracy Preserved</div>
-          <div className="text-sm text-[#9BD8FF]">Minimal accuracy loss</div>
         </div>
-      </div>
 
-      <div className={`bg-[#121628]/50 border border-[#122033] rounded-xl p-8 text-center relative overflow-hidden ${showCelebration ? 'animate-pulse' : ''}`}>
-        <div className="absolute inset-0 bg-gradient-to-br from-[rgba(255,184,77,0.05)] to-transparent"></div>
-        <div className="relative z-10">
-          <Zap className="w-12 h-12 text-[#FFB84D] mx-auto mb-4" />
-          <div className="text-4xl font-bold text-[#FFB84D] mb-2">
-            {comparisonData.improvements.speedImprovement}x
+        <div className={`bg-[#121628]/50 border border-[#122033] rounded-xl p-8 text-center relative overflow-hidden ${showCelebration ? 'animate-pulse' : ''}`}>
+          <div className="absolute inset-0 bg-gradient-to-br from-[rgba(255,184,77,0.05)] to-transparent"></div>
+          <div className="relative z-10">
+            <Zap className="w-12 h-12 text-[#FFB84D] mx-auto mb-4" />
+            <div className="text-4xl font-bold text-[#FFB84D] mb-2">
+              {comparisonData.improvements.speedImprovement.toFixed(1)}x
+            </div>
+            <div className="text-lg font-semibold text-[#E6FBFF] mb-1">Speed Improvement</div>
+            <div className="text-sm text-[#9BD8FF]">Faster inference time</div>
           </div>
-          <div className="text-lg font-semibold text-[#E6FBFF] mb-1">Speed Improvement</div>
-          <div className="text-sm text-[#9BD8FF]">Faster inference time</div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderComparisonTable = () => {
+    if (!comparisonData) return null;
+    
     const metrics = [
       { 
         name: 'File Size (MB)', 
@@ -287,6 +279,8 @@ const Comparison = () => {
   };
 
   const renderBarChart = () => {
+    if (!comparisonData) return null;
+    
     const chartData = [
       { name: 'Accuracy', original: comparisonData.original.accuracy * 100, compressed: comparisonData.compressed.accuracy * 100 },
       { name: 'Precision', original: comparisonData.original.precision * 100, compressed: comparisonData.compressed.precision * 100 },
@@ -342,6 +336,8 @@ const Comparison = () => {
   };
 
   const renderRadarChart = () => {
+    if (!comparisonData) return null;
+    
     const radarData = [
       { name: 'Accuracy', original: comparisonData.original.accuracy, compressed: comparisonData.compressed.accuracy },
       { name: 'Precision', original: comparisonData.original.precision, compressed: comparisonData.compressed.precision },
@@ -448,7 +444,10 @@ const Comparison = () => {
     );
   };
 
-  const renderAnalysisCard = () => (
+  const renderAnalysisCard = () => {
+    if (!comparisonData) return null;
+    
+    return (
     <div className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6 mb-8">
       <h2 className="text-2xl font-semibold text-[#E6FBFF] mb-6">Compression Analysis</h2>
       <div className="grid md:grid-cols-2 gap-6">
@@ -497,9 +496,13 @@ const Comparison = () => {
         </p>
       </div>
     </div>
-  );
+    );
+  };
 
-  const renderFileSizeVisualization = () => (
+  const renderFileSizeVisualization = () => {
+    if (!comparisonData) return null;
+    
+    return (
     <div className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6 mb-8">
       <h2 className="text-2xl font-semibold text-[#E6FBFF] mb-6 text-center">File Size Visualization</h2>
       <div className="flex items-center justify-center gap-8">
@@ -534,7 +537,39 @@ const Comparison = () => {
         </p>
       </div>
     </div>
-  );
+    );
+  };
+
+  if (loading && !comparisonData) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center">
+          <div className="mx-auto w-16 h-16 text-[#00F3FF] animate-spin">
+            <Activity className="w-full h-full" />
+          </div>
+          <h2 className="text-2xl font-bold text-[#E6FBFF] mt-4">Loading Comparison...</h2>
+        </div>
+      </div>
+    );
+  }
+
+  if (!comparisonData) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] bg-clip-text text-transparent">
+            Model Comparison Results
+          </h1>
+          <p className="text-lg text-[#9BD8FF]">
+            No comparison data available. Please train, compress, and evaluate both models first.
+          </p>
+          <button onClick={loadComparison} className="px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105">
+            Load Comparison
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -564,6 +599,13 @@ const Comparison = () => {
         <p className="text-lg text-[#9BD8FF]">
           Comprehensive analysis of original vs compressed model performance
         </p>
+        {comparisonData && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md">
+              Original vs Compressed Model Comparison
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Hero Stats */}
@@ -572,7 +614,7 @@ const Comparison = () => {
       {/* Load from Backend */}
       <div className="flex justify-center">
         <button onClick={loadComparison} disabled={loading} className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#00F3FF] hover:border-[#00F3FF] hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all duration-300 hover:scale-105 disabled:opacity-50">
-          {loading ? 'Loading…' : 'Refresh From Backend'}
+          {loading ? 'Loading…' : 'Refresh Comparison'}
         </button>
       </div>
 

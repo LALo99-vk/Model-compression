@@ -4,6 +4,8 @@ import { datasetService, modelService, trainingService, evaluationService, compr
 export interface AppState {
   backendConnected: boolean;
   datasets: { filename: string; size: number; path: string }[];
+  selectedDatasetPath: string | null;
+  selectedDatasetName: string | null;
   selectedModel: any | null;
   trainingStatus: {
     status: string;
@@ -23,6 +25,7 @@ export interface AppState {
   error?: string | null;
 
   setBackendConnected: (connected: boolean) => void;
+  setSelectedDataset: (dataset: { filename: string; path: string } | null) => void;
   fetchDatasets: () => Promise<void>;
   uploadDatasets: (files: File[]) => Promise<void>;
   deleteDataset: (filename: string) => Promise<void>;
@@ -40,6 +43,8 @@ export interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   backendConnected: false,
   datasets: [],
+  selectedDatasetPath: null,
+  selectedDatasetName: null,
   selectedModel: null,
   trainingStatus: null,
   trainingLogs: null,
@@ -50,6 +55,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   error: null,
 
   setBackendConnected: (connected) => set({ backendConnected: connected }),
+
+  setSelectedDataset: (dataset) => {
+    if (!dataset) {
+      set({ selectedDatasetPath: null, selectedDatasetName: null });
+    } else {
+      set({ selectedDatasetPath: dataset.path, selectedDatasetName: dataset.filename });
+    }
+  },
 
   fetchDatasets: async () => {
     set({ loading: true, error: null });
@@ -80,6 +93,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await datasetService.delete(filename);
       await get().fetchDatasets();
+      const state = get();
+      if (state.selectedDatasetName === filename) {
+        set({ selectedDatasetName: null, selectedDatasetPath: null });
+      }
     } catch (e: any) {
       set({ error: e.message });
     } finally {
@@ -125,8 +142,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ trainingLogs: logs });
       } catch {}
       const intervalMs = Number(process.env.REACT_APP_POLLING_INTERVAL || '2000');
-      if (status.status === 'training') {
+      // Continue polling if training is in progress, or if just completed (to fetch final logs)
+      if (status.status === 'training' || status.status === 'loading_data') {
         setTimeout(() => get().pollTraining(), intervalMs);
+      } else if (status.status === 'completed') {
+        // Fetch final logs one more time after completion
+        try {
+          const logs = await trainingService.logs();
+          set({ trainingLogs: logs });
+        } catch {}
       }
     } catch (e: any) {
       set({ error: e.message });

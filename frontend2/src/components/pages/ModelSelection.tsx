@@ -18,6 +18,17 @@ const ModelSelection = () => {
   const [showConfig, setShowConfig] = useState(false);
   const { showSuccess, showError } = useToast();
   const selectModel = useAppStore((s) => s.selectModel);
+  const selectedDatasetName = useAppStore((s) => s.selectedDatasetName);
+  const selectedModelConfig = useAppStore((s) => s.selectedModel);
+  
+  const getModelDisplayName = () => {
+    if (!selectedModelConfig) return 'No Model Selected';
+    const modelType = selectedModelConfig.model_type;
+    if (modelType === 'cnn') return 'CNN Model';
+    if (modelType === 'rnn') return 'RNN Model';
+    if (modelType === 'decision_tree') return 'Decision Tree';
+    return String(modelType);
+  };
 
   const models: Model[] = [
     {
@@ -104,6 +115,15 @@ const ModelSelection = () => {
         <p className="text-lg text-[#9BD8FF]">
           Select the best model for your data type
         </p>
+        <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+          {selectedDatasetName ? (
+            <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={`Dataset: ${selectedDatasetName} | Model: ${getModelDisplayName()}`}>
+              Dataset: {selectedDatasetName} | Model: {getModelDisplayName()}
+            </span>
+          ) : (
+            <span className="px-3 py-1 bg-[#121628] border border-[#122033] rounded-full text-[#9BD8FF]">No dataset selected (choose on Upload page)</span>
+          )}
+        </div>
       </div>
 
       {/* Model Cards Grid */}

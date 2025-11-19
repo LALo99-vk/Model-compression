@@ -14,6 +14,7 @@ import numpy as np
 import json
 import time
 import pickle
+import os
 from utils.model_builder import ModelBuilder
 from utils.data_loader import DataLoaderUtil
 
@@ -39,6 +40,16 @@ class TrainingService:
                 validation_split
             )
 
+            # Ensure num_classes is set for classification problems
+            if model_config.get('task_type') == 'classification' and not model_config.get('num_classes'):
+                # y_train may be numpy array, list, or pandas Series; np.unique handles all
+                unique_labels = np.unique(y_train)
+                model_config['num_classes'] = int(len(unique_labels))
+
+            # Ensure results directory exists
+            if not os.path.exists("results"):
+                os.makedirs("results")
+
             model_type = model_config['model_type']
 
             # Train based on model type
@@ -58,6 +69,7 @@ class TrainingService:
         """Train sklearn-based models"""
         config = model_config['config']
         task_type = model_config['task_type']
+        start_time = time.time()
 
         if task_type == 'classification':
             model = DecisionTreeClassifier(
@@ -95,13 +107,24 @@ class TrainingService:
         with open("results/training_data.json", "w") as f:
             json.dump(training_data, f, indent=2)
 
-        # Save logs
+        # Save logs (include a single-epoch history so frontend can display it)
+        history = [
+            {
+                "epoch": 1,
+                # Approximate "loss" as (1 - score) so charts have something sensible
+                "train_loss": float(1.0 - train_score),
+                "val_loss": float(1.0 - val_score),
+                "val_accuracy": float(val_score),
+            }
+        ]
+
         logs = {
             "model_type": "decision_tree",
             "train_score": float(train_score),
             "val_score": float(val_score),
             "epochs": 1,
-            "training_time": time.time()
+            "training_time": time.time() - start_time,
+            "history": history,
         }
 
         with open("results/training_logs.json", "w") as f:
@@ -109,10 +132,31 @@ class TrainingService:
 
     def _train_pytorch_model(self, model_config, X_train, X_val, y_train, y_val, epochs, batch_size):
         """Train PyTorch models"""
-        # Build model
+        model_type = model_config.get('model_type')
+
+        if model_type == 'cnn':
+            if X_train.ndim == 2:
+                num_features = X_train.shape[1]
+                side = int(np.sqrt(num_features))
+                if side * side == num_features:
+                    h = side
+                    w = side
+                else:
+                    h = num_features
+                    w = 1
+                X_train = X_train.reshape(-1, 1, h, w)
+                X_val = X_val.reshape(-1, 1, h, w)
+                model_config['input_shape'] = (1, h, w)
+            elif X_train.ndim == 4:
+                model_config['input_shape'] = tuple(X_train.shape[1:])
+        elif model_type == 'rnn':
+            if X_train.ndim == 2:
+                model_config['input_shape'] = (X_train.shape[1],)
+            elif X_train.ndim == 3:
+                model_config['input_shape'] = tuple(X_train.shape[1:])
+
         model = self.model_builder.build_pytorch_model(model_config)
 
-        # Prepare data
         train_dataset = TensorDataset(
             torch.FloatTensor(X_train),
             torch.LongTensor(y_train) if model_config['task_type'] == 'classification' else torch.FloatTensor(y_train)
@@ -135,6 +179,17 @@ class TrainingService:
 
         # Training loop
         training_history = []
+        start_time = time.time()
+        
+        # Initialize logs file at the start of training
+        logs = {
+            "model_type": model_type,
+            "epochs": epochs,
+            "training_time": 0,
+            "history": [],
+        }
+        with open("results/training_logs.json", "w") as f:
+            json.dump(logs, f, indent=2)
 
         for epoch in range(epochs):
             if self.stop_flag:
@@ -181,6 +236,16 @@ class TrainingService:
             }
             training_history.append(epoch_log)
 
+            # Save logs incrementally so frontend can display them in real-time
+            logs = {
+                "model_type": model_type,
+                "epochs": epochs,
+                "training_time": time.time() - start_time,
+                "history": training_history,
+            }
+            with open("results/training_logs.json", "w") as f:
+                json.dump(logs, f, indent=2)
+
             # Update status
             self._update_status("training", epoch + 1, epochs,
                                 f"Loss: {avg_train_loss:.4f}, Val Acc: {val_accuracy:.4f}")
@@ -196,11 +261,12 @@ class TrainingService:
         with open("models/original_model_arch.json", "w") as f:
             json.dump(model_arch, f, indent=2)
 
-        # Save logs
+        # Save training logs with history
         logs = {
-            "model_type": model_config['model_type'],
+            "model_type": model_type,
             "epochs": epochs,
-            "history": training_history
+            "training_time": time.time() - start_time,
+            "history": training_history,
         }
 
         with open("results/training_logs.json", "w") as f:

@@ -4,7 +4,7 @@ import { useDataset } from '../../hooks/useDataset';
 
 const DatasetUpload = () => {
   const [dragActive, setDragActive] = useState(false);
-  const { datasets, progress, upload, remove } = useDataset();
+  const { datasets, progress, upload, remove, selectedDatasetPath, selectedDatasetName, setSelectedDataset } = useDataset();
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -69,6 +69,15 @@ const DatasetUpload = () => {
         <p className="text-lg text-[#9BD8FF]">
           Support for CSV files and image datasets
         </p>
+        <div className="mt-3 flex items-center justify-center gap-2 text-sm">
+          {selectedDatasetName ? (
+            <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={selectedDatasetName}>
+              Dataset: {selectedDatasetName}
+            </span>
+          ) : (
+            <span className="px-3 py-1 bg-[#121628] border border-[#122033] rounded-full text-[#9BD8FF]">No dataset selected</span>
+          )}
+        </div>
       </div>
 
       {/* Upload Zone */}
@@ -160,9 +169,15 @@ const DatasetUpload = () => {
             {datasets.length > 0 ? (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {datasets.map((dataset) => (
-              <div
+              <button
+                type="button"
                 key={dataset.filename}
-                className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6 hover:border-[#00F3FF]/30 hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] transition-all duration-300 group"
+                onClick={() => setSelectedDataset({ filename: dataset.filename, path: dataset.path })}
+                className={`text-left bg-[#121628]/50 border rounded-xl p-6 hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] transition-all duration-300 group w-full ${
+                  selectedDatasetPath === dataset.path
+                    ? 'border-[#00F3FF] shadow-[0_0_20px_rgba(0,243,255,0.3)]'
+                    : 'border-[#122033] hover:border-[#00F3FF]/30'
+                }`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
@@ -173,7 +188,7 @@ const DatasetUpload = () => {
                     <button className="p-1 text-[#9BD8FF] hover:text-[#00F3FF] transition-colors">
                       <Download className="w-4 h-4" />
                     </button>
-                    <button onClick={() => remove(dataset.filename)} className="p-1 text-[#9BD8FF] hover:text-[#FF3B6B] transition-colors">
+                    <button onClick={(e) => { e.stopPropagation(); remove(dataset.filename); }} className="p-1 text-[#9BD8FF] hover:text-[#FF3B6B] transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -188,14 +203,18 @@ const DatasetUpload = () => {
                     <span>uploaded</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className={`text-xs px-2 py-1 rounded-full ${
-                      'bg-[#00FFA0]/20 text-[#00FFA0]'
-                    }`}>
-                      READY
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full ${
+                        selectedDatasetPath === dataset.path
+                          ? 'bg-[#00F3FF]/20 text-[#00F3FF]'
+                          : 'bg-[#00FFA0]/20 text-[#00FFA0]'
+                      }`}
+                    >
+                      {selectedDatasetPath === dataset.path ? 'SELECTED' : 'READY'}
                     </span>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
               </div>
             ) : (

@@ -15,6 +15,7 @@ import {
 import { evaluationService } from '../../api/services/evaluationService';
 import { modelService } from '../../api/services/modelService';
 import { useToast } from '../ui/ToastContainer';
+import { useAppStore } from '../../store/useAppStore';
 
 interface MetricData {
   accuracy: number;
@@ -29,20 +30,67 @@ interface MetricData {
 const Evaluation = () => {
   const [selectedModel, setSelectedModel] = useState<'original' | 'compressed'>('original');
   const [metrics, setMetrics] = useState<MetricData | null>(null);
+  const [originalMetrics, setOriginalMetrics] = useState<MetricData | null>(null);
+  const [compressedMetrics, setCompressedMetrics] = useState<MetricData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [datasetPath, setDatasetPath] = useState<string | null>(null);
   const { showError, showSuccess } = useToast();
+  const { selectedDatasetName, selectedDatasetPath, setSelectedDataset } = useAppStore((s) => ({
+    selectedDatasetName: s.selectedDatasetName,
+    selectedDatasetPath: s.selectedDatasetPath,
+    setSelectedDataset: s.setSelectedDataset,
+  }));
 
   useEffect(() => {
     loadMetrics();
   }, [selectedModel]);
 
   useEffect(() => {
+    // Load both original and compressed metrics for comparison
+    (async () => {
+      try {
+        const original = await evaluationService.metrics('original').catch(() => null);
+        const compressed = await evaluationService.metrics('compressed').catch(() => null);
+        
+        if (original) {
+          const mapped: MetricData = {
+            accuracy: original.accuracy,
+            precision: original.precision,
+            recall: original.recall,
+            f1Score: original.f1_score,
+            inferenceTime: original.inference_time * 1000,
+            modelSize: 0,
+          };
+          setOriginalMetrics(mapped);
+        }
+        
+        if (compressed) {
+          const mapped: MetricData = {
+            accuracy: compressed.accuracy,
+            precision: compressed.precision,
+            recall: compressed.recall,
+            f1Score: compressed.f1_score,
+            inferenceTime: compressed.inference_time * 1000,
+            modelSize: 0,
+          };
+          setCompressedMetrics(mapped);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  useEffect(() => {
     (async () => {
       try {
         const current = await modelService.current();
-        if (current?.dataset_path) setDatasetPath(current.dataset_path);
+        if (current?.dataset_path) {
+          setDatasetPath(current.dataset_path);
+          const filename = current.dataset_path.split(/[/\\]/).pop() || current.dataset_path;
+          setSelectedDataset({ filename, path: current.dataset_path });
+        } else if (selectedDatasetPath) {
+          setDatasetPath(selectedDatasetPath);
+        }
       } catch {}
     })();
   }, []);
@@ -56,8 +104,8 @@ const Evaluation = () => {
         accuracy: raw.accuracy,
         precision: raw.precision,
         recall: raw.recall,
-        f1Score: raw.f1_score ?? 0,
-        inferenceTime: (raw.inference_time ?? 0) * 1000,
+        f1Score: raw.f1_score,
+        inferenceTime: raw.inference_time * 1000,
         modelSize: 0,
       };
       setMetrics(mapped);
@@ -87,16 +135,37 @@ const Evaluation = () => {
     }
   };
 
+  const calculateChange = (current: number, previous: number | null): number => {
+    if (!previous || previous === 0) return 0;
+    return ((current - previous) / previous) * 100;
+  };
+
   const formatChange = (value: number) => {
     if (value > 0) return `+${value.toFixed(2)}%`;
     if (value < 0) return `${value.toFixed(2)}%`;
     return '0%';
   };
 
-  const getTrendIcon = (value: number) => {
-    if (value > 0) return <TrendingUp className="w-4 h-4 text-[#00FFA0]" />;
-    if (value < 0) return <TrendingDown className="w-4 h-4 text-[#FF3B6B]" />;
+  const getTrendIcon = (value: number, isImprovement: boolean = true) => {
+    // For accuracy/precision/recall/f1: higher is better
+    // For inference time: lower is better
+    const isPositive = isImprovement ? value > 0 : value < 0;
+    if (isPositive) return <TrendingUp className="w-4 h-4 text-[#00FFA0]" />;
+    if (!isPositive && value !== 0) return <TrendingDown className="w-4 h-4 text-[#FF3B6B]" />;
     return <Minus className="w-4 h-4 text-[#9BD8FF]" />;
+  };
+
+  const getChangeForMetric = (metricName: keyof MetricData): number => {
+    if (!metrics || !originalMetrics) return 0;
+    
+    if (selectedModel === 'original') {
+      // Compare original to compressed (if available)
+      if (!compressedMetrics) return 0;
+      return calculateChange(metrics[metricName], compressedMetrics[metricName]);
+    } else {
+      // Compare compressed to original
+      return calculateChange(metrics[metricName], originalMetrics[metricName]);
+    }
   };
 
   const renderConfusionMatrix = () => {
@@ -303,6 +372,13 @@ const Evaluation = () => {
           <p className="text-lg text-[#9BD8FF] mt-2">
             Analyze your model's performance metrics
           </p>
+          {selectedDatasetName && (
+            <div className="mt-2 flex items-center gap-2 text-sm">
+              <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={`Dataset: ${selectedDatasetName} | Model: ${selectedModel === 'original' ? 'Original' : 'Compressed'}`}>
+                Dataset: {selectedDatasetName} | Model: {selectedModel === 'original' ? 'Original' : 'Compressed'}
+              </span>
+            </div>
+          )}
         </div>
         
         {/* Model Type Selector */}
@@ -336,8 +412,10 @@ const Evaluation = () => {
             <div className="flex items-center justify-between mb-4">
               <Target className="w-8 h-8 text-[#00F3FF]" />
               <div className="flex items-center gap-1">
-                {getTrendIcon(2.3)}
-                <span className="text-xs text-[#00FFA0]">{formatChange(2.3)}</span>
+                {getTrendIcon(getChangeForMetric('accuracy'), true)}
+                <span className={`text-xs ${getChangeForMetric('accuracy') > 0 ? 'text-[#00FFA0]' : getChangeForMetric('accuracy') < 0 ? 'text-[#FF3B6B]' : 'text-[#9BD8FF]'}`}>
+                  {formatChange(getChangeForMetric('accuracy'))}
+                </span>
               </div>
             </div>
             <div className="space-y-2">
@@ -352,8 +430,10 @@ const Evaluation = () => {
             <div className="flex items-center justify-between mb-4">
               <Crosshair className="w-8 h-8 text-[#00F3FF]" />
               <div className="flex items-center gap-1">
-                {getTrendIcon(1.8)}
-                <span className="text-xs text-[#00FFA0]">{formatChange(1.8)}</span>
+                {getTrendIcon(getChangeForMetric('precision'), true)}
+                <span className={`text-xs ${getChangeForMetric('precision') > 0 ? 'text-[#00FFA0]' : getChangeForMetric('precision') < 0 ? 'text-[#FF3B6B]' : 'text-[#9BD8FF]'}`}>
+                  {formatChange(getChangeForMetric('precision'))}
+                </span>
               </div>
             </div>
             <div className="space-y-2">
@@ -368,8 +448,10 @@ const Evaluation = () => {
             <div className="flex items-center justify-between mb-4">
               <Layers className="w-8 h-8 text-[#FF00D0]" />
               <div className="flex items-center gap-1">
-                {getTrendIcon(-0.5)}
-                <span className="text-xs text-[#FF3B6B]">{formatChange(-0.5)}</span>
+                {getTrendIcon(getChangeForMetric('recall'), true)}
+                <span className={`text-xs ${getChangeForMetric('recall') > 0 ? 'text-[#00FFA0]' : getChangeForMetric('recall') < 0 ? 'text-[#FF3B6B]' : 'text-[#9BD8FF]'}`}>
+                  {formatChange(getChangeForMetric('recall'))}
+                </span>
               </div>
             </div>
             <div className="space-y-2">
@@ -384,8 +466,10 @@ const Evaluation = () => {
             <div className="flex items-center justify-between mb-4">
               <Activity className="w-8 h-8 text-[#00FFA0]" />
               <div className="flex items-center gap-1">
-                {getTrendIcon(1.2)}
-                <span className="text-xs text-[#00FFA0]">{formatChange(1.2)}</span>
+                {getTrendIcon(getChangeForMetric('f1Score'), true)}
+                <span className={`text-xs ${getChangeForMetric('f1Score') > 0 ? 'text-[#00FFA0]' : getChangeForMetric('f1Score') < 0 ? 'text-[#FF3B6B]' : 'text-[#9BD8FF]'}`}>
+                  {formatChange(getChangeForMetric('f1Score'))}
+                </span>
               </div>
             </div>
             <div className="space-y-2">
@@ -413,12 +497,12 @@ const Evaluation = () => {
               </thead>
               <tbody>
                 {[
-                  { name: 'Accuracy', value: `${(metrics.accuracy * 100).toFixed(2)}%`, change: 2.3, icon: Target },
-                  { name: 'Precision', value: metrics.precision.toFixed(4), change: 1.8, icon: Crosshair },
-                  { name: 'Recall', value: metrics.recall.toFixed(4), change: -0.5, icon: Layers },
-                  { name: 'F1-Score', value: metrics.f1Score.toFixed(4), change: 1.2, icon: Activity },
-                  { name: 'Inference Time', value: `${metrics.inferenceTime.toFixed(2)} ms`, change: -15.3, icon: Activity },
-                  { name: 'Model Size', value: `${metrics.modelSize.toFixed(1)} MB`, change: 0, icon: Activity },
+                  { name: 'Accuracy', value: `${(metrics.accuracy * 100).toFixed(2)}%`, change: getChangeForMetric('accuracy'), icon: Target, isImprovement: true },
+                  { name: 'Precision', value: metrics.precision.toFixed(4), change: getChangeForMetric('precision'), icon: Crosshair, isImprovement: true },
+                  { name: 'Recall', value: metrics.recall.toFixed(4), change: getChangeForMetric('recall'), icon: Layers, isImprovement: true },
+                  { name: 'F1-Score', value: metrics.f1Score.toFixed(4), change: getChangeForMetric('f1Score'), icon: Activity, isImprovement: true },
+                  { name: 'Inference Time', value: `${metrics.inferenceTime.toFixed(2)} ms`, change: getChangeForMetric('inferenceTime'), icon: Activity, isImprovement: false },
+                  { name: 'Model Size', value: `${metrics.modelSize.toFixed(1)} MB`, change: 0, icon: Activity, isImprovement: false },
                 ].map((metric, index) => {
                   const IconComponent = metric.icon;
                   return (
@@ -432,10 +516,10 @@ const Evaluation = () => {
                       <td className="py-3 px-4 text-[#E6FBFF] font-semibold">{metric.value}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          {getTrendIcon(metric.change)}
+                          {getTrendIcon(metric.change, metric.isImprovement)}
                           <span className={`text-sm font-medium ${
-                            metric.change > 0 ? 'text-[#00FFA0]' : 
-                            metric.change < 0 ? 'text-[#FF3B6B]' : 'text-[#9BD8FF]'
+                            (metric.isImprovement && metric.change > 0) || (!metric.isImprovement && metric.change < 0) ? 'text-[#00FFA0]' : 
+                            (metric.isImprovement && metric.change < 0) || (!metric.isImprovement && metric.change > 0) ? 'text-[#FF3B6B]' : 'text-[#9BD8FF]'
                           }`}>
                             {formatChange(metric.change)}
                           </span>
