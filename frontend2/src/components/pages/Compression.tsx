@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Scissors, Compass as Compress, FlaskRound as Flask, Play, CheckCircle, Clock, ArrowRight, FileText, Zap, AlertCircle } from 'lucide-react';
-import { compressionAPI } from '../../services/api';
+import { useState, useEffect } from 'react';
+import { Scissors, Compass as Compress, FlaskRound as Flask, Play, CheckCircle, Clock, ArrowRight, Zap, AlertCircle } from 'lucide-react';
+import { compressionService } from '../../api/services/compressionService';
+import { useToast } from '../ui/ToastContainer';
 
 interface CompressionMethod {
   id: string;
@@ -49,6 +50,7 @@ const Compression = () => {
     }
   });
   const [parameters, setParameters] = useState<Record<string, any>>({});
+  const { showSuccess, showError } = useToast();
 
   const methods: CompressionMethod[] = [
     {
@@ -120,6 +122,14 @@ const Compression = () => {
     }
   }, [compressionStatus.status]);
 
+  useEffect(() => {
+    if (compressionStatus.status === 'completed') {
+      const methodName = methods.find(m => m.id === compressionStatus.method)?.name || 'Compression';
+      const detail = modelInfo.compressed?.reduction ? `-${modelInfo.compressed.reduction}% size` : undefined;
+      showSuccess(`${methodName} Completed`, detail);
+    }
+  }, [compressionStatus.status, compressionStatus.method, modelInfo.compressed, showSuccess]);
+
   const getMethodIcon = (icon: string) => {
     switch (icon) {
       case 'scissors':
@@ -159,14 +169,21 @@ const Compression = () => {
     });
 
     try {
-      // In real implementation, this would call the API
-      // await compressionAPI.compress(selectedMethod, parameters);
+      if (selectedMethod === 'pruning') {
+        await compressionService.compress({ method: 'pruning', pruning_amount: parameters.pruningAmount ?? 0.3 });
+      } else if (selectedMethod === 'quantization') {
+        await compressionService.compress({ method: 'quantization', quantization_bits: parameters.bitWidth ?? 8 });
+      } else if (selectedMethod === 'distillation') {
+        await compressionService.compress({ method: 'distillation', distillation_temperature: parameters.temperature ?? 3, distillation_alpha: parameters.alpha ?? 0.5 });
+      }
+      showSuccess('Compression Started');
     } catch (error) {
       setCompressionStatus(prev => ({
         ...prev,
         status: 'failed',
         error: 'Compression failed'
       }));
+      showError('Compression Failed', (error as any)?.message ?? String(error));
     }
   };
 

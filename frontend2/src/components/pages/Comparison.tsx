@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   TrendingDown, 
   CheckCircle, 
@@ -15,7 +15,8 @@ import {
   HardDrive,
   Activity
 } from 'lucide-react';
-import { comparisonAPI } from '../../services/api';
+import { comparisonService } from '../../api/services/comparisonService';
+import { useToast } from '../ui/ToastContainer';
 
 interface ComparisonData {
   original: {
@@ -72,8 +73,8 @@ const Comparison = () => {
   const [loading, setLoading] = useState(false);
   const [showCelebration, setShowCelebration] = useState(true);
 
+  const { showError, showSuccess } = useToast();
   useEffect(() => {
-    // Hide celebration after 3 seconds
     const timer = setTimeout(() => setShowCelebration(false), 3000);
     return () => clearTimeout(timer);
   }, []);
@@ -81,10 +82,35 @@ const Comparison = () => {
   const loadComparison = async () => {
     setLoading(true);
     try {
-      // const data = await comparisonAPI.compare();
-      // setComparisonData(data);
+      const data = await comparisonService.compare();
+      setComparisonData({
+        original: {
+          accuracy: data.accuracy.original,
+          precision: data.detailed_metrics.original?.precision ?? 0,
+          recall: data.detailed_metrics.original?.recall ?? 0,
+          f1Score: data.detailed_metrics.original?.f1_score ?? 0,
+          inferenceTime: data.inference_time.original_ms,
+          modelSize: data.file_size.original_mb,
+          parameters: 0,
+        },
+        compressed: {
+          accuracy: data.accuracy.compressed,
+          precision: data.detailed_metrics.compressed?.precision ?? 0,
+          recall: data.detailed_metrics.compressed?.recall ?? 0,
+          f1Score: data.detailed_metrics.compressed?.f1_score ?? 0,
+          inferenceTime: data.inference_time.compressed_ms,
+          modelSize: data.file_size.compressed_mb,
+          parameters: 0,
+        },
+        improvements: {
+          sizeReduction: data.file_size.reduction_percent,
+          accuracyPreserved: 100 + data.accuracy.difference_percent,
+          speedImprovement: data.inference_time.speedup,
+        },
+      });
+      showSuccess('Comparison Refreshed');
     } catch (error) {
-      console.error('Failed to load comparison data:', error);
+      showError('Comparison Failed', (error as any)?.message ?? String(error));
     } finally {
       setLoading(false);
     }
@@ -542,6 +568,13 @@ const Comparison = () => {
 
       {/* Hero Stats */}
       {renderHeroStats()}
+
+      {/* Load from Backend */}
+      <div className="flex justify-center">
+        <button onClick={loadComparison} disabled={loading} className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#00F3FF] hover:border-[#00F3FF] hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all duration-300 hover:scale-105 disabled:opacity-50">
+          {loading ? 'Loading…' : 'Refresh From Backend'}
+        </button>
+      </div>
 
       {/* Detailed Comparison Table */}
       {renderComparisonTable()}

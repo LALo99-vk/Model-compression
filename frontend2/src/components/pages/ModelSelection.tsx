@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
   Layers, 
   BarChart, 
@@ -9,11 +9,15 @@ import {
   ArrowRight 
 } from 'lucide-react';
 import { Model } from '../../types';
+import { useToast } from '../ui/ToastContainer';
+import { useAppStore } from '../../store/useAppStore';
 
 const ModelSelection = () => {
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [taskType, setTaskType] = useState<'classification' | 'regression'>('classification');
   const [showConfig, setShowConfig] = useState(false);
+  const { showSuccess, showError } = useToast();
+  const selectModel = useAppStore((s) => s.selectModel);
 
   const models: Model[] = [
     {
@@ -80,9 +84,14 @@ const ModelSelection = () => {
     setShowConfig(true);
   };
 
-  const confirmSelection = () => {
-    // Handle model confirmation
-    console.log('Model confirmed:', selectedModel, 'Task type:', taskType);
+  const confirmSelection = async () => {
+    try {
+      if (!selectedModel) return;
+      await selectModel({ model_type: selectedModel.type, task_type: taskType, config: {} });
+      showSuccess('Model Selected', selectedModel.name);
+    } catch (e: any) {
+      showError('Selection Failed', e.message);
+    }
   };
 
   return (
@@ -235,7 +244,7 @@ const ModelSelection = () => {
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         .slider::-webkit-slider-thumb {
           appearance: none;
           width: 20px;

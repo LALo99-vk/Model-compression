@@ -106,15 +106,9 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      <div className="fixed top-0 right-0 z-50 p-4 space-y-2">
-        {toasts.map((toast, index) => (
-          <div
-            key={toast.id}
-            style={{ 
-              transform: `translateY(${index * 80}px)`,
-              zIndex: 50 - index 
-            }}
-          >
+      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] p-4 space-y-3 w-[calc(100%-2rem)] max-w-md">
+        {toasts.map((toast) => (
+          <div key={toast.id}>
             <Toast {...toast} onClose={removeToast} />
           </div>
         ))}

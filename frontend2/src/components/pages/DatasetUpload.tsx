@@ -1,29 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Upload, FileText, Image, Download, Trash2, CheckCircle, AlertCircle, Clock } from 'lucide-react';
-import { Dataset } from '../../types';
+import { useDataset } from '../../hooks/useDataset';
 
 const DatasetUpload = () => {
   const [dragActive, setDragActive] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const { datasets, progress, upload, remove } = useDataset();
   const [isUploading, setIsUploading] = useState(false);
-  const [datasets, setDatasets] = useState<Dataset[]>([
-    {
-      id: '1',
-      filename: 'customer_data.csv',
-      size: 2500000,
-      uploadDate: '2024-01-15',
-      status: 'ready',
-      type: 'csv'
-    },
-    {
-      id: '2',
-      filename: 'product_images.zip',
-      size: 15600000,
-      uploadDate: '2024-01-14',
-      status: 'processing',
-      type: 'image'
-    }
-  ]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -45,31 +28,10 @@ const DatasetUpload = () => {
     }
   }, []);
 
-  const handleFiles = (files: FileList) => {
+  const handleFiles = async (files: FileList) => {
     setIsUploading(true);
-    setUploadProgress(0);
-    
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsUploading(false);
-          // Add new dataset to list
-          const newDataset: Dataset = {
-            id: Date.now().toString(),
-            filename: files[0].name,
-            size: files[0].size,
-            uploadDate: new Date().toISOString().split('T')[0],
-            status: 'ready',
-            type: files[0].name.endsWith('.csv') ? 'csv' : 'image'
-          };
-          setDatasets(prev => [newDataset, ...prev]);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 200);
+    await upload(Array.from(files));
+    setIsUploading(false);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -80,7 +42,7 @@ const DatasetUpload = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const getStatusIcon = (status: Dataset['status']) => {
+  const getStatusIcon = (status: 'ready' | 'processing' | 'error') => {
     switch (status) {
       case 'ready':
         return <CheckCircle className="w-5 h-5 text-[#00FFA0]" />;
@@ -91,7 +53,7 @@ const DatasetUpload = () => {
     }
   };
 
-  const getFileIcon = (type: Dataset['type']) => {
+  const getFileIcon = (type: 'csv' | 'image') => {
     return type === 'csv' ? 
       <FileText className="w-6 h-6 text-[#00F3FF]" /> : 
       <Image className="w-6 h-6 text-[#FF00D0]" />;
@@ -121,6 +83,9 @@ const DatasetUpload = () => {
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
           onDrop={handleDrop}
+          onClick={() => {
+            if (!isUploading) fileInputRef.current?.click();
+          }}
         >
           {/* Background Glow */}
           <div className="absolute inset-0 bg-gradient-to-br from-[rgba(0,243,255,0.02)] to-[rgba(255,0,208,0.02)] rounded-xl"></div>
@@ -140,10 +105,10 @@ const DatasetUpload = () => {
                   <div className="bg-[#121628] rounded-full h-2 overflow-hidden">
                     <div 
                       className="bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] h-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
+                      style={{ width: `${progress}%` }}
                     ></div>
                   </div>
-                  <p className="text-sm text-[#9BD8FF] mt-2">{uploadProgress}% complete</p>
+                  <p className="text-sm text-[#9BD8FF] mt-2">{progress}% complete</p>
                 </div>
               </div>
             ) : (
@@ -152,7 +117,7 @@ const DatasetUpload = () => {
                   <p className="text-xl text-[#E6FBFF] font-semibold mb-2">
                     Drag & drop files here or click to browse
                   </p>
-                  <p className="text-[#9BD8FF]">Max 100MB per file</p>
+                  <p className="text-[#9BD8FF]">Max {Math.round(Number(process.env.REACT_APP_MAX_FILE_SIZE || '104857600') / (1024 * 1024))}MB per file · Allowed: CSV, JPG, JPEG, PNG, BMP</p>
                 </div>
 
                 {/* File Types */}
@@ -175,39 +140,40 @@ const DatasetUpload = () => {
           <input
             type="file"
             multiple
-            accept=".csv,.jpg,.jpeg,.png,.zip"
+            accept=".csv,.jpg,.jpeg,.png,.bmp"
             onChange={(e) => e.target.files && handleFiles(e.target.files)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            ref={fileInputRef}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
             disabled={isUploading}
           />
         </div>
       </div>
 
       {/* Uploaded Files List */}
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-[#E6FBFF]">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-[#E6FBFF]">
             Uploaded Datasets ({datasets.length})
-          </h2>
-        </div>
+              </h2>
+            </div>
 
-        {datasets.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {datasets.length > 0 ? (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {datasets.map((dataset) => (
               <div
-                key={dataset.id}
+                key={dataset.filename}
                 className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6 hover:border-[#00F3FF]/30 hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] transition-all duration-300 group"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    {getFileIcon(dataset.type)}
-                    {getStatusIcon(dataset.status)}
+                    {getFileIcon(dataset.filename.endsWith('.csv') ? 'csv' : 'image')}
+                    {getStatusIcon('ready')}
                   </div>
                   <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button className="p-1 text-[#9BD8FF] hover:text-[#00F3FF] transition-colors">
                       <Download className="w-4 h-4" />
                     </button>
-                    <button className="p-1 text-[#9BD8FF] hover:text-[#FF3B6B] transition-colors">
+                    <button onClick={() => remove(dataset.filename)} className="p-1 text-[#9BD8FF] hover:text-[#FF3B6B] transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -219,24 +185,20 @@ const DatasetUpload = () => {
                   </h3>
                   <div className="flex justify-between text-sm text-[#9BD8FF]">
                     <span>{formatFileSize(dataset.size)}</span>
-                    <span>{dataset.uploadDate}</span>
+                    <span>uploaded</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className={`text-xs px-2 py-1 rounded-full ${
-                      dataset.status === 'ready' 
-                        ? 'bg-[#00FFA0]/20 text-[#00FFA0]' 
-                        : dataset.status === 'processing'
-                        ? 'bg-[#FFB84D]/20 text-[#FFB84D]'
-                        : 'bg-[#FF3B6B]/20 text-[#FF3B6B]'
+                      'bg-[#00FFA0]/20 text-[#00FFA0]'
                     }`}>
-                      {dataset.status.toUpperCase()}
+                      READY
                     </span>
                   </div>
                 </div>
               </div>
             ))}
-          </div>
-        ) : (
+              </div>
+            ) : (
           <div className="text-center py-12">
             <div className="mx-auto w-24 h-24 mb-6 relative">
               <Upload className="w-full h-full text-[#9BD8FF]/30" />

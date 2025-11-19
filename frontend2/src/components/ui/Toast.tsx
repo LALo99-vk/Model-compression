@@ -91,31 +91,30 @@ const Toast: React.FC<ToastProps> = ({
   return (
     <div
       className={`
-        fixed top-4 right-4 z-50 max-w-sm w-full
-        transform transition-all duration-300 ease-out
+        w-full max-w-sm transform transition-all duration-300 ease-out
         ${isVisible && !isLeaving 
-          ? 'translate-x-0 opacity-100' 
-          : 'translate-x-full opacity-0'
+          ? 'translate-y-0 opacity-100' 
+          : 'translate-y-4 opacity-0'
         }
       `}
     >
       <div
         className={`
-          bg-[#121628]/95 backdrop-blur-lg border rounded-xl p-4
+          bg-[#0b1220]/90 backdrop-blur-xl border rounded-2xl p-5
           ${getBorderColor()} ${getGlowColor()}
         `}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-4">
           {getIcon()}
           <div className="flex-1 min-w-0">
-            <h4 className="text-[#E6FBFF] font-semibold text-sm">{title}</h4>
+            <h4 className="text-[#E6FBFF] font-semibold text-base">{title}</h4>
             {message && (
               <p className="text-[#9BD8FF] text-sm mt-1">{message}</p>
             )}
             {action && (
               <button
                 onClick={action.onClick}
-                className="text-[#00F3FF] text-sm font-medium hover:text-[#66FBFF] transition-colors mt-2"
+                className="text-[#00F3FF] text-sm font-semibold hover:text-[#66FBFF] transition-colors mt-2"
               >
                 {action.label}
               </button>
@@ -125,7 +124,7 @@ const Toast: React.FC<ToastProps> = ({
             onClick={handleClose}
             className="text-[#9BD8FF] hover:text-[#E6FBFF] transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
       </div>

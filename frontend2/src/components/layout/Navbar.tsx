@@ -1,5 +1,6 @@
-import React from 'react';
-import { Brain, User, Zap } from 'lucide-react';
+import { Brain, User } from 'lucide-react';
+import { useBackendStatus } from '../../hooks/useBackendStatus';
+import { useAppStore } from '../../store/useAppStore';
 
 const Navbar = () => {
   const navItems = [
@@ -10,6 +11,8 @@ const Navbar = () => {
     { name: 'Documentation', href: '#docs', active: false },
   ];
 
+  useBackendStatus();
+  const connected = useAppStore((s) => s.backendConnected);
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-[70px] bg-[#0b1220]/80 backdrop-blur-lg border-b border-[#122033]/50">
       <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
@@ -48,10 +51,10 @@ const Navbar = () => {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <div className="relative">
-              <div className="w-2 h-2 bg-[#00FFA0] rounded-full animate-pulse"></div>
-              <div className="absolute inset-0 bg-[#00FFA0] blur-sm opacity-50 rounded-full"></div>
+              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#00FFA0] animate-pulse' : 'bg-[#FF3B6B]'}`}></div>
+              <div className={`absolute inset-0 blur-sm opacity-50 rounded-full ${connected ? 'bg-[#00FFA0]' : 'bg-[#FF3B6B]'}`}></div>
             </div>
-            <span className="text-sm text-[#9BD8FF]">Backend Connected</span>
+            <span className="text-sm text-[#9BD8FF]">{connected ? 'Backend Connected' : 'Backend Disconnected'}</span>
           </div>
           <div className="w-8 h-8 bg-gradient-to-br from-[#00F3FF] to-[#FF00D0] rounded-full flex items-center justify-center">
             <User className="w-4 h-4 text-white" />

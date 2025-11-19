@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Target, 
   Crosshair, 
@@ -12,7 +12,9 @@ import {
   BarChart3,
   Radar
 } from 'lucide-react';
-import { evaluationAPI } from '../../services/api';
+import { evaluationService } from '../../api/services/evaluationService';
+import { modelService } from '../../api/services/modelService';
+import { useToast } from '../ui/ToastContainer';
 
 interface MetricData {
   accuracy: number;
@@ -29,20 +31,39 @@ const Evaluation = () => {
   const [metrics, setMetrics] = useState<MetricData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [datasetPath, setDatasetPath] = useState<string | null>(null);
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => {
     loadMetrics();
   }, [selectedModel]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const current = await modelService.current();
+        if (current?.dataset_path) setDatasetPath(current.dataset_path);
+      } catch {}
+    })();
+  }, []);
+
   const loadMetrics = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await evaluationAPI.getMetrics(selectedModel);
-      setMetrics(data);
+      const raw = await evaluationService.metrics(selectedModel);
+      const mapped: MetricData = {
+        accuracy: raw.accuracy,
+        precision: raw.precision,
+        recall: raw.recall,
+        f1Score: raw.f1_score ?? 0,
+        inferenceTime: (raw.inference_time ?? 0) * 1000,
+        modelSize: 0,
+      };
+      setMetrics(mapped);
     } catch (err) {
       setError('Failed to load metrics');
-      console.error(err);
+      showError('Metrics Error', (err as any)?.message ?? String(err));
     } finally {
       setLoading(false);
     }
@@ -52,11 +73,15 @@ const Evaluation = () => {
     setLoading(true);
     setError(null);
     try {
-      await evaluationAPI.evaluate(selectedModel);
+      if (!datasetPath) {
+        throw new Error('No dataset selected. Start training or select a dataset.');
+      }
+      await evaluationService.evaluate({ model_type: selectedModel, dataset_path: datasetPath });
       await loadMetrics();
+      showSuccess('Evaluation Completed');
     } catch (err) {
       setError('Evaluation failed');
-      console.error(err);
+      showError('Evaluation Failed', (err as any)?.message ?? String(err));
     } finally {
       setLoading(false);
     }
