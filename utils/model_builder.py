@@ -129,12 +129,10 @@ class ModelBuilder:
             # Ensure required parameters exist
             if "input_shape" not in model_config:
                 raise ValueError("input_shape is required in model_config for cnn models")
-            if "num_classes" not in model_config:
-                raise ValueError("num_classes is required in model_config for cnn models")
-
+            
             # Get and validate parameters
             input_shape = model_config["input_shape"]
-            num_classes = model_config["num_classes"]
+            num_classes = model_config.get("num_classes")
             dense_units = int(config.get("dense_units", 128))
 
             # Convert input_shape to tuple if it's a list
@@ -150,7 +148,9 @@ class ModelBuilder:
             ):
                 input_shape = (input_shape[2], input_shape[0], input_shape[1])
 
-            # Ensure num_classes is an integer
+            # Ensure num_classes is set and is an integer
+            if num_classes is None:
+                raise ValueError("num_classes is required in model_config for cnn models. Please ensure the model was trained first.")
             num_classes = int(num_classes)
 
             model = SimpleCNN(

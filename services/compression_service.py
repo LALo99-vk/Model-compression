@@ -22,6 +22,60 @@ from utils.model_builder import ModelBuilder
 class CompressionService:
     def __init__(self):
         self.model_builder = ModelBuilder()
+    
+    def _load_model_config(self):
+        """Load model config, trying architecture file first, then selected config"""
+        import numpy as np
+        
+        # Try to load from architecture file (has complete config from training)
+        arch_path = "models/original_model_arch.json"
+        if os.path.exists(arch_path):
+            with open(arch_path, "r") as f:
+                arch_data = json.load(f)
+                # The architecture file has {"config": {...}, "state_dict_path": "..."}
+                if "config" in arch_data:
+                    model_config = arch_data["config"]
+                else:
+                    # If structure is different, use the whole thing
+                    model_config = arch_data
+        else:
+            # Fall back to selected model config
+            with open("models/selected_model_config.json", "r") as f:
+                model_config = json.load(f)
+        
+        # Ensure num_classes is set - try to infer from training data if missing
+        if not model_config.get("num_classes") or model_config.get("num_classes") is None:
+            # Try to load from training data
+            training_data_path = "results/training_data.json"
+            if os.path.exists(training_data_path):
+                with open(training_data_path, "r") as f:
+                    training_data = json.load(f)
+                    y_train = training_data.get("y_train", [])
+                    if y_train:
+                        unique_labels = np.unique(y_train)
+                        model_config["num_classes"] = int(len(unique_labels))
+            
+            # If still not set, try to infer from dataset
+            if not model_config.get("num_classes") or model_config.get("num_classes") is None:
+                dataset_path = model_config.get("dataset_path")
+                if dataset_path and os.path.exists(dataset_path):
+                    try:
+                        df = pd.read_csv(dataset_path)
+                        target_col = "target" if "target" in df.columns else df.columns[-1]
+                        y = df[target_col]
+                        unique_labels = np.unique(y)
+                        model_config["num_classes"] = int(len(unique_labels))
+                    except:
+                        pass
+        
+        # If still not set and it's a classification task, default to 2
+        if not model_config.get("num_classes") or model_config.get("num_classes") is None:
+            if model_config.get("task_type") == "classification":
+                model_config["num_classes"] = 2  # Binary classification default
+            else:
+                model_config["num_classes"] = 1  # Regression default
+        
+        return model_config
 
     def compress(self, model_path, method, pruning_amount=0.3, quantization_bits=8,
                  distillation_temperature=3.0, distillation_alpha=0.5):
@@ -39,9 +93,8 @@ class CompressionService:
     def _apply_pruning(self, model_path, amount):
         """Apply weight pruning to model"""
 
-        # Load model config
-        with open("models/selected_model_config.json", "r") as f:
-            model_config = json.load(f)
+        # Load model config - try architecture file first, then selected config
+        model_config = self._load_model_config()
 
         if model_path.endswith('.pkl'):
             # REAL SKLEARN COMPRESSION
@@ -122,15 +175,24 @@ class CompressionService:
         with open("models/compressed_metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
         
+        compressed_size = best_result["compressed_size"]
+        size_reduction = best_result["compression_percentage"]
+        
         return {
             "method": "pruning",
             "technique": best_result["technique"],
+            "pruning_amount": amount,
             "original_size": original_size,
-            "compressed_size": best_result["compressed_size"],
-            "compression_percentage": best_result["compression_percentage"],
+            "compressed_size": compressed_size,
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "size_reduction_percent": round(size_reduction, 2),
+            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1,
             "original_accuracy": original_accuracy,
             "compressed_accuracy": best_result["accuracy"],
-            "accuracy_drop": original_accuracy - best_result["accuracy"]
+            "accuracy_drop": original_accuracy - best_result["accuracy"],
+            "original_parameters": getattr(original_model, 'tree_', None) and original_model.tree_.node_count or 0,
+            "compressed_parameters": getattr(best_result["model"], 'tree_', None) and best_result["model"].tree_.node_count or 0
         }
 
     def _apply_cost_complexity_pruning(self, original_model, X_train, y_train, X_val, y_val, original_accuracy):
@@ -242,7 +304,13 @@ class CompressionService:
         }
 
     def _apply_pytorch_pruning(self, model_path, amount, model_config):
-        """Apply PyTorch pruning (unchanged from original)"""
+        """Apply PyTorch pruning"""
+        
+        # Ensure model_config has all required fields
+        if not model_config.get("num_classes"):
+            raise ValueError("num_classes is missing from model config. Please train the model first.")
+        if not model_config.get("input_shape") and model_config.get("model_type") in ["cnn", "rnn"]:
+            raise ValueError("input_shape is missing from model config. Please train the model first.")
         
         # Load PyTorch model
         model = self.model_builder.build_pytorch_model(model_config)
@@ -280,13 +348,19 @@ class CompressionService:
 
         original_size = os.path.getsize(model_path)
         compressed_size = os.path.getsize("models/compressed_model.pt")
+        size_reduction = ((original_size - compressed_size) / original_size * 100) if original_size > 0 else 0
 
         result = {
             "method": "pruning",
             "pruning_amount": amount,
             "original_size": original_size,
             "compressed_size": compressed_size,
-            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "size_reduction_percent": round(size_reduction, 2),
+            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1,
+            "original_parameters": sum(p.numel() for p in model.parameters()),
+            "compressed_parameters": sum(p.numel() for p in model.parameters())  # Same after pruning, but weights are sparse
         }
 
         return result
@@ -294,9 +368,8 @@ class CompressionService:
     def _apply_quantization(self, model_path, bits):
         """Apply quantization to model"""
 
-        # Load model config
-        with open("models/selected_model_config.json", "r") as f:
-            model_config = json.load(f)
+        # Load model config - try architecture file first, then selected config
+        model_config = self._load_model_config()
 
         if model_path.endswith('.pkl'):
             # REAL SKLEARN QUANTIZATION (Feature Selection)
@@ -421,21 +494,33 @@ class CompressionService:
         with open("models/compressed_metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
         
+        size_reduction = (1 - feature_ratio) * 100
+        
         return {
             "method": "quantization",
             "technique": "feature_selection",
+            "quantization_bits": bits,
             "original_size": original_size,
             "compressed_size": compressed_size,
-            "compression_percentage": (1 - feature_ratio) * 100,
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "size_reduction_percent": round(size_reduction, 2),
+            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1,
             "original_accuracy": original_accuracy,
             "compressed_accuracy": best_accuracy,
             "accuracy_drop": original_accuracy - best_accuracy,
-            "original_features": n_features,
-            "selected_features": best_k
+            "original_parameters": n_features,
+            "compressed_parameters": best_k
         }
 
     def _apply_pytorch_quantization(self, model_path, bits, model_config):
-        """Apply PyTorch quantization (unchanged from original)"""
+        """Apply PyTorch quantization"""
+        
+        # Ensure model_config has all required fields
+        if not model_config.get("num_classes"):
+            raise ValueError("num_classes is missing from model config. Please train the model first.")
+        if not model_config.get("input_shape") and model_config.get("model_type") in ["cnn", "rnn"]:
+            raise ValueError("input_shape is missing from model config. Please train the model first.")
         
         # Load PyTorch model
         model = self.model_builder.build_pytorch_model(model_config)
@@ -462,13 +547,19 @@ class CompressionService:
 
         original_size = os.path.getsize(model_path)
         compressed_size = os.path.getsize("models/compressed_model.pt")
+        size_reduction = ((original_size - compressed_size) / original_size * 100) if original_size > 0 else 0
 
         result = {
             "method": "quantization",
             "quantization_bits": bits,
             "original_size": original_size,
             "compressed_size": compressed_size,
-            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "size_reduction_percent": round(size_reduction, 2),
+            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1,
+            "original_parameters": sum(p.numel() for p in model.parameters()),
+            "compressed_parameters": sum(p.numel() for p in quantized_model.parameters())
         }
 
         return result
@@ -476,9 +567,8 @@ class CompressionService:
     def _apply_distillation(self, model_path, temperature, alpha):
         """Apply knowledge distillation"""
 
-        # Load model config
-        with open("models/selected_model_config.json", "r") as f:
-            model_config = json.load(f)
+        # Load model config - try architecture file first, then selected config
+        model_config = self._load_model_config()
 
         if model_path.endswith('.pkl'):
             # REAL SKLEARN DISTILLATION
@@ -586,32 +676,49 @@ class CompressionService:
         with open("models/compressed_metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
         
+        size_reduction = (1 - complexity_ratio) * 100
+        
         return {
             "method": "distillation",
             "technique": "knowledge_distillation",
+            "temperature": temperature,
+            "alpha": alpha,
             "original_size": original_size,
             "compressed_size": compressed_size,
-            "compression_percentage": (1 - complexity_ratio) * 100,
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "size_reduction_percent": round(size_reduction, 2),
+            "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1,
             "original_accuracy": teacher_accuracy,
             "compressed_accuracy": student_accuracy,
             "accuracy_drop": teacher_accuracy - student_accuracy,
-            "temperature": temperature,
-            "alpha": alpha
+            "original_parameters": teacher_complexity,
+            "compressed_parameters": student_complexity
         }
 
     def _apply_pytorch_distillation(self, model_path, temperature, alpha, model_config):
-        """Apply PyTorch distillation (unchanged from original)"""
+        """Apply PyTorch distillation"""
+        
+        # Ensure model_config has all required fields
+        if not model_config.get("num_classes"):
+            raise ValueError("num_classes is missing from model config. Please train the model first.")
+        if not model_config.get("input_shape") and model_config.get("model_type") in ["cnn", "rnn"]:
+            raise ValueError("input_shape is missing from model config. Please train the model first.")
         
         # For PyTorch models, create a smaller student model
         # For now, we'll just reduce the model size by 50%
         student_config = copy.deepcopy(model_config)
+        
+        # Ensure config dict exists
+        if "config" not in student_config:
+            student_config["config"] = {}
 
         # Reduce model capacity
-        if 'filters' in student_config['config']:
+        if 'filters' in student_config.get('config', {}):
             student_config['config']['filters'] = [f // 2 for f in student_config['config']['filters']]
-        if 'hidden_size' in student_config['config']:
+        if 'hidden_size' in student_config.get('config', {}):
             student_config['config']['hidden_size'] = student_config['config']['hidden_size'] // 2
-        if 'dense_units' in student_config['config']:
+        if 'dense_units' in student_config.get('config', {}):
             student_config['config']['dense_units'] = student_config['config']['dense_units'] // 2
 
         # Build student model
@@ -632,8 +739,13 @@ class CompressionService:
         with open("models/compressed_model_arch.json", "w") as f:
             json.dump(model_arch, f, indent=2)
 
+        # Load original model to get parameter count
+        original_model = self.model_builder.build_pytorch_model(model_config)
+        original_model.load_state_dict(torch.load(model_path))
+        
         original_size = os.path.getsize(model_path)
         compressed_size = os.path.getsize("models/compressed_model.pt")
+        size_reduction = ((original_size - compressed_size) / original_size * 100) if original_size > 0 else 0
 
         result = {
             "method": "distillation",
@@ -641,7 +753,12 @@ class CompressionService:
             "alpha": alpha,
             "original_size": original_size,
             "compressed_size": compressed_size,
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "size_reduction_percent": round(size_reduction, 2),
             "compression_ratio": original_size / compressed_size if compressed_size > 0 else 1,
+            "original_parameters": sum(p.numel() for p in original_model.parameters()),
+            "compressed_parameters": sum(p.numel() for p in student_model.parameters()),
             "note": "Student model created with 50% capacity reduction"
         }
 
