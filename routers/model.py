@@ -3,6 +3,7 @@ Model Router - Handles model selection and configuration
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import json
@@ -131,3 +132,63 @@ async def get_current_selection():
         config = json.load(f)
 
     return config
+
+
+@router.get("/download/original")
+async def download_original_model():
+    """
+    Download the original trained model
+    Auto-detects file type (.pt for PyTorch, .pkl for scikit-learn)
+    """
+    # Check for model files in priority order
+    possible_files = [
+        ("models/original_model.pt", "application/octet-stream", "original_model.pt"),
+        ("models/original_model.pkl", "application/octet-stream", "original_model.pkl"),
+        ("models/original_model.h5", "application/octet-stream", "original_model.h5"),
+    ]
+    
+    for file_path, media_type, filename in possible_files:
+        if os.path.exists(file_path):
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            print(f"✅ Serving {filename} ({file_size_mb:.4f} MB)")
+            return FileResponse(
+                path=file_path,
+                media_type=media_type,
+                filename=filename
+            )
+    
+    raise HTTPException(
+        status_code=404,
+        detail="No trained model found. Please train a model first. Expected: original_model.pt or original_model.pkl"
+    )
+
+
+@router.get("/download/compressed")
+async def download_compressed_model():
+    """
+    Download the compressed model
+    Auto-detects file type (.pt for PyTorch, .pkl for scikit-learn)
+    """
+    # Check for compressed model files
+    possible_files = [
+        ("models/compressed_model.pt", "application/octet-stream", "compressed_model.pt"),
+        ("models/compressed_model.pkl", "application/octet-stream", "compressed_model.pkl"),
+        ("models/quantized_model.pt", "application/octet-stream", "quantized_model.pt"),
+        ("models/pruned_model.pt", "application/octet-stream", "pruned_model.pt"),
+        ("models/distilled_model.pt", "application/octet-stream", "distilled_model.pt"),
+    ]
+    
+    for file_path, media_type, filename in possible_files:
+        if os.path.exists(file_path):
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            print(f"✅ Serving {filename} ({file_size_mb:.4f} MB)")
+            return FileResponse(
+                path=file_path,
+                media_type=media_type,
+                filename=filename
+            )
+    
+    raise HTTPException(
+        status_code=404,
+        detail="No compressed model found. Please compress a model first."
+    )

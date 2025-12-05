@@ -1,82 +1,136 @@
 """
-Evaluation Router - Handles model evaluation
+Evaluation Router - Handles model evaluation with comprehensive validation
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
 import os
+import logging
 from services.evaluation_service import EvaluationService
+from utils.validation import DataValidator
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Evaluation"])
 
 evaluation_service = EvaluationService()
+validator = DataValidator()
 
 
 class EvaluationRequest(BaseModel):
-    model_type: str  # 'original' or 'compressed'
-    dataset_path: str
+    model_type: str = Field(..., description="Model type: 'original' or 'compressed'")
+    dataset_path: str = Field(..., description="Path to the evaluation dataset")
 
 
 @router.post("/evaluate")
 async def evaluate_model(request: EvaluationRequest):
     """
-    Evaluate original or compressed model
+    Evaluate original or compressed model with comprehensive validation
     """
-    # Determine model path based on model_type
-    if request.model_type == "original":
-        # Check for original model with different extensions
-        possible_paths = [
-            f"models/original_model.pkl",
-            f"models/original_model.pt", 
-            f"models/original_model.h5"
-        ]
-    else:
-        # Check for compressed models or other model types
-        possible_paths = [
-            f"models/{request.model_type}_model.pkl",
-            f"models/{request.model_type}_model.pt",
-            f"models/{request.model_type}_model.h5"
-        ]
-    
-    # Find the first existing model file
-    model_path = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            model_path = path
-            break
-    
-    if not model_path:
+    try:
+        # Validate model_type
+        if request.model_type not in ["original", "compressed"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid model_type: {request.model_type}. Must be 'original' or 'compressed'"
+            )
+        
+        # Validate dataset path
+        try:
+            validator.validate_dataset_path(request.dataset_path)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dataset not found: {request.dataset_path}"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid dataset path: {str(e)}"
+            )
+        
+        # Determine model path based on model_type
+        if request.model_type == "original":
+            # Check for original model with different extensions
+            possible_paths = [
+                "models/original_model.pkl",
+                "models/original_model.pt", 
+                "models/original_model.h5"
+            ]
+        else:
+            # Check for compressed models
+            possible_paths = [
+                "models/compressed_model.pkl",
+                "models/compressed_model.pt",
+                "models/compressed_model.h5"
+            ]
+        
+        # Find the first existing model file
+        model_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                model_path = path
+                break
+        
+        if not model_path:
+            raise HTTPException(
+                status_code=404,
+                detail=f"{request.model_type.capitalize()} model not found. Please train/compress the model first. Checked paths: {possible_paths}"
+            )
+
+        logger.info(f"Evaluating {request.model_type} model on dataset: {request.dataset_path}")
+
+        # Perform evaluation with comprehensive error handling
+        try:
+            metrics = evaluation_service.evaluate(
+                model_path,
+                request.dataset_path,
+                request.model_type
+            )
+        except ValueError as e:
+            error_msg = str(e)
+            # Provide helpful error messages for common issues
+            if "Feature count mismatch" in error_msg:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{error_msg}. Please use the same dataset that was used for training, or re-train the model."
+                )
+            elif "task type" in error_msg.lower() or "classification" in error_msg.lower() or "regression" in error_msg.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Task type mismatch: {error_msg}. The model may have been trained with a different task type. Please re-train the model."
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Evaluation error: {error_msg}"
+                )
+
+        # Save metrics
+        os.makedirs("results", exist_ok=True)
+        metrics_path = f"results/{request.model_type}_metrics.json"
+        with open(metrics_path, "w") as f:
+            json.dump(metrics, f, indent=2, default=str)
+
+        logger.info(f"Evaluation completed successfully for {request.model_type} model. Task type: {metrics.get('task_type', 'unknown')}")
+
+        return {
+            "message": "Evaluation completed",
+            "model_type": request.model_type,
+            "task_type": metrics.get('task_type', 'unknown'),
+            "metrics": metrics,
+            "saved_to": metrics_path
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error during evaluation: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=404,
-            detail=f"Model not found. Checked paths: {possible_paths}"
+            status_code=500,
+            detail=f"Evaluation failed: {str(e)}. Please check that the model was trained correctly and the dataset is compatible."
         )
-
-    # Check if dataset exists
-    if not os.path.exists(request.dataset_path):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Dataset not found: {request.dataset_path}"
-        )
-
-    # Perform evaluation
-    metrics = evaluation_service.evaluate(
-        model_path,
-        request.dataset_path,
-        request.model_type
-    )
-
-    # Save metrics
-    metrics_path = f"results/{request.model_type}_metrics.json"
-    with open(metrics_path, "w") as f:
-        json.dump(metrics, f, indent=2)
-
-    return {
-        "message": "Evaluation completed",
-        "model_type": request.model_type,
-        "metrics": metrics,
-        "saved_to": metrics_path
-    }
 
 
 @router.get("/metrics/{model_type}")

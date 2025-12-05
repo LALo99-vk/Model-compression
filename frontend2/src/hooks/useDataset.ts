@@ -31,7 +31,7 @@ export const useDataset = () => {
   const upload = async (files: File[]) => {
     try {
       const maxSize = Number(process.env.REACT_APP_MAX_FILE_SIZE || '104857600');
-      const allowed = ['.csv', '.jpg', '.jpeg', '.png', '.bmp'];
+      const allowed = ['.csv', '.txt', '.jpg', '.jpeg', '.png', '.bmp'];
       const invalid: string[] = [];
       const tooLarge: string[] = [];
       files.forEach((f) => {
@@ -47,12 +47,28 @@ export const useDataset = () => {
         showError('File too large', `Max size: ${Math.round(maxSize / (1024 * 1024))} MB`);
         return;
       }
-      await uploadDatasets(files);
+      
+      const response = await uploadDatasets(files);
+      
+      // Detect if this is a folder upload
       if (files.length > 0) {
-        const f = files[0];
-        setSelectedDataset({ filename: f.name, path: `uploads/${f.name}` });
+        // Check if files have a common folder path
+        const firstFilePath = files[0].webkitRelativePath || files[0].name;
+        const folderMatch = firstFilePath.match(/^([^\/]+)\//);
+        
+        if (folderMatch && response && (response as any).folders && (response as any).folders.length > 0) {
+          // This is a folder upload - select the folder
+          const folderName = (response as any).folders[0];
+          setSelectedDataset({ filename: folderName, path: `uploads/${folderName}` });
+          showSuccess('Folder Uploaded', `${folderName} with ${files.length} images`);
+        } else {
+          // Single file upload
+          const f = files[0];
+          setSelectedDataset({ filename: f.name, path: `uploads/${f.name}` });
+          showSuccess('Upload Complete', 'Files uploaded successfully');
+        }
       }
-      showSuccess('Upload Complete', 'Files uploaded successfully');
+      
       setProgress(100);
     } catch (e: any) {
       showError('Upload Failed', e.message);

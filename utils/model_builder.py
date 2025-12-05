@@ -4,6 +4,10 @@ Model Builder - Constructs models based on configuration
 
 import torch
 import torch.nn as nn
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class SimpleCNN(nn.Module):
@@ -150,7 +154,17 @@ class ModelBuilder:
 
             # Ensure num_classes is set and is an integer
             if num_classes is None:
-                raise ValueError("num_classes is required in model_config for cnn models. Please ensure the model was trained first.")
+                # For regression, default to 1 output
+                task_type = model_config.get('task_type', 'classification')
+                if task_type == 'regression':
+                    num_classes = 1
+                    logger.info(f"num_classes not set for regression, using default: {num_classes}")
+                else:
+                    raise ValueError(
+                        "num_classes is required in model_config for cnn models. "
+                        "For classification, please ensure num_classes is set. "
+                        "For regression, it will default to 1."
+                    )
             num_classes = int(num_classes)
 
             model = SimpleCNN(
@@ -162,12 +176,28 @@ class ModelBuilder:
         elif model_type == "rnn":
             # Get and validate parameters
             input_shape = model_config.get("input_shape", (10,))
-            if isinstance(input_shape, tuple):
-                input_size = input_shape[-1] if len(input_shape) > 1 else 1
+            
+            # Handle both list and tuple formats
+            # input_shape can be [seq_len, input_size] or (seq_len, input_size) or just input_size
+            if isinstance(input_shape, (list, tuple)):
+                # If it's a sequence, extract the input_size (last element)
+                input_size = int(input_shape[-1]) if len(input_shape) > 0 else 1
+            elif isinstance(input_shape, (int, float)):
+                # If it's a single number, use it as input_size
+                input_size = int(input_shape)
             else:
+                # Default fallback
                 input_size = 1
 
-            num_classes = int(model_config.get("num_classes", 1))
+            # For RNN, default to 1 for regression, infer from config for classification
+            task_type = model_config.get('task_type', 'classification')
+            if model_config.get("num_classes") is None:
+                if task_type == 'regression':
+                    num_classes = 1
+                else:
+                    num_classes = 1  # Default, but should be set by auto_infer
+            else:
+                num_classes = int(model_config.get("num_classes", 1))
 
             model = SimpleRNN(
                 input_size=input_size,

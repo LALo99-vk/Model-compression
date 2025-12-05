@@ -15,6 +15,7 @@ export interface Model {
   bestFor: string;
   defaultConfig: Record<string, any>;
   icon: string;
+  compatibleWith?: string[];
 }
 
 export interface TrainingConfig {

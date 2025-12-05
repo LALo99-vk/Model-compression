@@ -4,6 +4,8 @@ export interface DatasetFile {
   filename: string;
   size: number;
   path: string;
+  type?: 'file' | 'folder';
+  image_count?: number;
 }
 
 export interface DatasetListResponse {
@@ -14,13 +16,18 @@ export interface DatasetListResponse {
 export interface UploadResponse {
   message: string;
   files: DatasetFile[];
+  folders?: string[];
   count: number;
 }
 
 export const datasetService = {
   async upload(files: File[]): Promise<UploadResponse> {
     const form = new FormData();
-    files.forEach((file) => form.append('files', file, file.name));
+    // Use webkitRelativePath for folder uploads, fallback to name for single files
+    files.forEach((file) => {
+      const filename = (file as any).webkitRelativePath || file.name;
+      form.append('files', file, filename);
+    });
 
     const res = await api.post('/api/dataset/upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },

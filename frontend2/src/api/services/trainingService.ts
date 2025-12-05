@@ -13,6 +13,13 @@ export interface TrainingStatusResponse {
   total_epochs: number;
   message?: string;
   timestamp: number;
+  model_size_bytes?: number;
+  model_size_mb?: number;
+  model_size_kb?: number;
+  model_path?: string;
+  total_parameters?: number;
+  trainable_parameters?: number;
+  num_parameters?: number;
 }
 
 export interface TrainingLogsResponse {
@@ -27,6 +34,13 @@ export interface TrainingLogsResponse {
   train_score?: number;
   val_score?: number;
   training_time?: number;
+  model_size_bytes?: number;
+  model_size_mb?: number;
+  model_size_kb?: number;
+  model_path?: string;
+  total_parameters?: number;
+  trainable_parameters?: number;
+  num_parameters?: number;
 }
 
 export const trainingService = {

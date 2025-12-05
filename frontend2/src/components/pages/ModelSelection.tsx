@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Layers, 
   BarChart, 
@@ -6,20 +6,30 @@ import {
   Settings, 
   CheckCircle, 
   Info,
-  ArrowRight 
+  ArrowRight,
+  Zap,
+  AlertTriangle,
+  FileText,
+  Image as ImageIcon,
+  Type
 } from 'lucide-react';
 import { Model } from '../../types';
 import { useToast } from '../ui/ToastContainer';
 import { useAppStore } from '../../store/useAppStore';
 
 const ModelSelection = () => {
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto');
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [taskType, setTaskType] = useState<'classification' | 'regression'>('classification');
   const [showConfig, setShowConfig] = useState(false);
-  const { showSuccess, showError } = useToast();
+  const [autoSelectedModel, setAutoSelectedModel] = useState<Model | null>(null);
+  const [datasetType, setDatasetType] = useState<'tabular' | 'image' | 'text' | null>(null);
+  const { showSuccess, showError, showWarning, showInfo } = useToast();
   const selectModel = useAppStore((s) => s.selectModel);
   const selectedDatasetName = useAppStore((s) => s.selectedDatasetName);
+  const selectedDatasetPath = useAppStore((s) => s.selectedDatasetPath);
   const selectedModelConfig = useAppStore((s) => s.selectedModel);
+  const datasets = useAppStore((s) => s.datasets);
   
   const getModelDisplayName = () => {
     if (!selectedModelConfig) return 'No Model Selected';
@@ -31,6 +41,21 @@ const ModelSelection = () => {
   };
 
   const models: Model[] = [
+    {
+      id: 'decision_tree',
+      name: 'Decision Tree',
+      type: 'decision_tree',
+      description: 'Fast and interpretable for tabular data',
+      bestFor: 'Tabular Data, Classification/Regression',
+      defaultConfig: {
+        maxDepth: 10,
+        minSamplesSplit: 2,
+        minSamplesLeaf: 1,
+        criterion: 'gini'
+      },
+      icon: 'git-branch',
+      compatibleWith: ['tabular']
+    },
     {
       id: 'cnn',
       name: 'CNN',
@@ -44,7 +69,8 @@ const ModelSelection = () => {
         dropout: 0.5,
         epochs: 20
       },
-      icon: 'layers'
+      icon: 'layers',
+      compatibleWith: ['image']
     },
     {
       id: 'rnn',
@@ -59,23 +85,67 @@ const ModelSelection = () => {
         dropout: 0.3,
         epochs: 50
       },
-      icon: 'bar-chart'
-    },
-    {
-      id: 'decision_tree',
-      name: 'Decision Tree',
-      type: 'decision_tree',
-      description: 'Fast and interpretable for tabular data',
-      bestFor: 'Tabular Data, Classification',
-      defaultConfig: {
-        maxDepth: 10,
-        minSamplesSplit: 2,
-        minSamplesLeaf: 1,
-        criterion: 'gini'
-      },
-      icon: 'git-branch'
+      icon: 'bar-chart',
+      compatibleWith: ['text', 'tabular']
     }
   ];
+
+  // AUTO MODE: Auto-detect dataset type and recommend model
+  useEffect(() => {
+    if (mode === 'auto' && selectedDatasetName) {
+      detectDatasetTypeAndRecommendModel();
+    }
+  }, [mode, selectedDatasetName]);
+
+  const detectDatasetTypeAndRecommendModel = () => {
+    if (!selectedDatasetName) {
+      setDatasetType(null);
+      setAutoSelectedModel(null);
+      return;
+    }
+
+    const filename = selectedDatasetName.toLowerCase();
+    
+    // Find the selected dataset in the datasets list
+    const selectedDataset = datasets.find(d => d.filename === selectedDatasetName);
+    
+    // Check if it's a folder with images (from backend metadata)
+    if (selectedDataset && (selectedDataset as any).type === 'folder' && (selectedDataset as any).image_count > 0) {
+      // Folder with images → CNN
+      setDatasetType('image');
+      const recommended = models.find(m => m.id === 'cnn');
+      setAutoSelectedModel(recommended || null);
+      return;
+    }
+    
+    // Detect dataset type based on file extension/name (priority order)
+    if (filename.endsWith('.txt')) {
+      // .txt files → RNN (text data)
+      setDatasetType('text');
+      const recommended = models.find(m => m.id === 'rnn');
+      setAutoSelectedModel(recommended || null);
+    } else if (filename.endsWith('.csv') || filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
+      setDatasetType('tabular');
+      // Tabular → Decision Tree
+      const recommended = models.find(m => m.id === 'decision_tree');
+      setAutoSelectedModel(recommended || null);
+    } else if (filename.includes('image') || filename.includes('img') || filename.includes('pic')) {
+      setDatasetType('image');
+      // Images → CNN
+      const recommended = models.find(m => m.id === 'cnn');
+      setAutoSelectedModel(recommended || null);
+    } else if (filename.includes('text') || filename.includes('nlp')) {
+      setDatasetType('text');
+      // Text → RNN
+      const recommended = models.find(m => m.id === 'rnn');
+      setAutoSelectedModel(recommended || null);
+    } else {
+      // Default to tabular for unknown
+      setDatasetType('tabular');
+      const recommended = models.find(m => m.id === 'decision_tree');
+      setAutoSelectedModel(recommended || null);
+    }
+  };
 
   const getModelIcon = (icon: string) => {
     switch (icon) {
@@ -90,19 +160,103 @@ const ModelSelection = () => {
     }
   };
 
+  const getDatasetTypeIcon = () => {
+    if (datasetType === 'tabular') return <FileText className="w-5 h-5 text-[#00F3FF]" />;
+    if (datasetType === 'image') return <ImageIcon className="w-5 h-5 text-[#FF00D0]" />;
+    if (datasetType === 'text') return <Type className="w-5 h-5 text-[#00FFA0]" />;
+    return <FileText className="w-5 h-5 text-[#9BD8FF]" />;
+  };
+
+  // Validate dataset-model compatibility
+  const validateCompatibility = (model: Model): { compatible: boolean; reason?: string } => {
+    if (!datasetType) {
+      return { compatible: false, reason: 'Dataset type not detected. Please upload a valid dataset first.' };
+    }
+
+    const modelCompatibility = model.compatibleWith || [];
+    
+    if (!modelCompatibility.includes(datasetType)) {
+      let reason = '';
+      if (model.id === 'cnn' && datasetType !== 'image') {
+        reason = 'CNN models require image datasets. Your dataset appears to be ' + datasetType + '.';
+      } else if (model.id === 'decision_tree' && datasetType !== 'tabular') {
+        reason = 'Decision Tree models require tabular data (CSV). Your dataset appears to be ' + datasetType + '.';
+      } else if (model.id === 'rnn' && !['text', 'tabular'].includes(datasetType)) {
+        reason = 'RNN models require text or sequential data. Your dataset appears to be ' + datasetType + '.';
+      } else {
+        reason = `This model is not compatible with ${datasetType} data.`;
+      }
+      return { compatible: false, reason };
+    }
+
+    return { compatible: true };
+  };
+
   const handleModelSelect = (model: Model) => {
+    // MANUAL MODE: Validate compatibility
+    if (mode === 'manual') {
+      const validation = validateCompatibility(model);
+      
+      if (!validation.compatible) {
+        showError('Incompatible Model', validation.reason || 'This model is not compatible with your dataset.');
+        showWarning(
+          'Options',
+          '1. Switch to Auto Mode\n2. Re-upload a compatible dataset'
+        );
+        return;
+      }
+    }
+
     setSelectedModel(model);
     setShowConfig(true);
   };
 
   const confirmSelection = async () => {
     try {
-      if (!selectedModel) return;
-      await selectModel({ model_type: selectedModel.type, task_type: taskType, config: {} });
-      showSuccess('Model Selected', selectedModel.name);
-    } catch (e: any) {
-      showError('Selection Failed', e.message);
+      const modelToConfirm = mode === 'auto' ? autoSelectedModel : selectedModel;
+      
+      if (!modelToConfirm) return;
+
+      // Final compatibility check
+      const validation = validateCompatibility(modelToConfirm);
+      if (!validation.compatible) {
+        showError('Incompatible Model', validation.reason || 'This model is not compatible with your dataset.');
+        return;
+      }
+
+      const modelConfig = {
+        model_type: modelToConfirm.type,
+        task_type: taskType,
+        config: modelToConfirm.defaultConfig,
+        dataset_path: selectedDatasetPath || ''
+      };
+
+      selectModel(modelConfig);
+      
+      showSuccess(
+        'Model Selected', 
+        `${modelToConfirm.name} configured for ${taskType} task`
+      );
+      
+      // STEP 2 → STEP 3: Auto-navigate to validation after model selection
+      showInfo('Next Step', 'Validating dataset for selected model...');
+      setTimeout(() => {
+        const event = new CustomEvent('navigate-to', { detail: 'validation' });
+        window.dispatchEvent(event);
+      }, 2000);
+      
+    } catch (error: any) {
+      showError('Selection Failed', error.message || 'Failed to select model');
     }
+  };
+
+  const confirmAutoSelection = () => {
+    if (!autoSelectedModel) {
+      showError('No Model', 'No model was auto-selected.');
+      return;
+    }
+    setSelectedModel(autoSelectedModel);
+    confirmSelection();
   };
 
   return (
@@ -110,181 +264,286 @@ const ModelSelection = () => {
       {/* Header */}
       <div className="text-center space-y-3">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] bg-clip-text text-transparent">
-          Choose Your Model Architecture
+          Model Selection
         </h1>
         <p className="text-lg text-[#9BD8FF]">
-          Select the best model for your data type
+          Choose how to select your AI model
         </p>
-        <div className="mt-2 flex items-center justify-center gap-2 text-sm">
-          {selectedDatasetName ? (
-            <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={`Dataset: ${selectedDatasetName} | Model: ${getModelDisplayName()}`}>
-              Dataset: {selectedDatasetName} | Model: {getModelDisplayName()}
+        {selectedDatasetName && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={selectedDatasetName}>
+              Dataset: {selectedDatasetName}
             </span>
-          ) : (
-            <span className="px-3 py-1 bg-[#121628] border border-[#122033] rounded-full text-[#9BD8FF]">No dataset selected (choose on Upload page)</span>
-          )}
+            {datasetType && (
+              <span className="px-3 py-1 bg-[#121628] border border-[#122033] rounded-full text-[#E6FBFF] font-medium flex items-center gap-2">
+                {getDatasetTypeIcon()}
+                Type: {datasetType.charAt(0).toUpperCase() + datasetType.slice(1)}
+              </span>
+            )}
+          </div>
+        )}
+        {selectedModelConfig && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="px-3 py-1 bg-[#121628] border border-[#00FFA0]/60 rounded-full text-[#00FFA0] font-medium">
+              ✓ Selected: {getModelDisplayName()}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Mode Selection */}
+      <div className="flex justify-center">
+        <div className="flex space-x-2 bg-[#0b1220]/50 p-2 rounded-lg border border-[#122033]">
+          <button
+            onClick={() => {
+              setMode('auto');
+              setSelectedModel(null);
+              setShowConfig(false);
+            }}
+            className={`px-8 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 ${
+              mode === 'auto'
+                ? 'bg-gradient-to-r from-[#00FFA0] to-[#00D67F] text-white shadow-lg'
+                : 'text-[#9BD8FF] hover:text-[#00FFA0] hover:bg-[#121628]'
+            }`}
+          >
+            <Zap className="w-5 h-5" />
+            AUTO MODE (Recommended)
+          </button>
+          <button
+            onClick={() => {
+              setMode('manual');
+              setSelectedModel(null);
+              setShowConfig(false);
+            }}
+            className={`px-8 py-3 rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 ${
+              mode === 'manual'
+                ? 'bg-gradient-to-r from-[#00F3FF] to-[#0088FF] text-white shadow-lg'
+                : 'text-[#9BD8FF] hover:text-[#00F3FF] hover:bg-[#121628]'
+            }`}
+          >
+            <Settings className="w-5 h-5" />
+            MANUAL MODE (Advanced)
+          </button>
         </div>
       </div>
 
-      {/* Model Cards Grid */}
-      <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8">
-        {models.map((model) => (
-          <div
-            key={model.id}
-            className={`relative bg-[#121628]/50 border rounded-xl p-6 cursor-pointer transition-all duration-300 group hover:scale-105 hover:shadow-[0_0_30px_rgba(0,243,255,0.2)] ${
-              selectedModel?.id === model.id
-                ? 'border-[#00F3FF] shadow-[0_0_20px_rgba(0,243,255,0.3)]'
-                : 'border-[#122033] hover:border-[#00F3FF]/50'
-            }`}
-            onClick={() => handleModelSelect(model)}
-          >
-            {/* Background Glow */}
-            <div className="absolute inset-0 bg-gradient-to-br from-[rgba(0,243,255,0.02)] to-[rgba(255,0,208,0.02)] rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            
-            {/* Selection Indicator */}
-            {selectedModel?.id === model.id && (
-              <div className="absolute top-4 right-4">
-                <CheckCircle className="w-6 h-6 text-[#00FFA0]" />
+      {/* AUTO MODE Content */}
+      {mode === 'auto' && (
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="bg-[#121628]/50 border border-[#00FFA0]/30 rounded-xl p-6">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-[#00FFA0]/10 rounded-lg">
+                <Zap className="w-8 h-8 text-[#00FFA0]" />
               </div>
-            )}
-
-            <div className="relative z-10 space-y-4">
-              {/* Icon */}
-              <div className="text-[#00F3FF] mb-4 relative">
-                {getModelIcon(model.icon)}
-                <div className="absolute inset-0 bg-[#00F3FF] blur-lg opacity-20 rounded-full"></div>
-              </div>
-
-              {/* Model Info */}
-              <div>
-                <h3 className="text-xl font-bold text-[#E6FBFF] mb-2">{model.name}</h3>
-                <p className="text-[#9BD8FF] text-sm mb-4">{model.description}</p>
-                <div className="text-xs text-[#00F3FF] font-medium mb-4">
-                  Best for: {model.bestFor}
-                </div>
-              </div>
-
-              {/* Architecture Preview */}
-              <div className="bg-[#0b1220]/50 rounded-lg p-3 space-y-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Settings className="w-4 h-4 text-[#9BD8FF]" />
-                  <span className="text-xs text-[#9BD8FF] font-medium">Default Config</span>
-                </div>
-                <div className="space-y-1">
-                  {Object.entries(model.defaultConfig).slice(0, 3).map(([key, value]) => (
-                    <div key={key} className="flex justify-between text-xs">
-                      <span className="text-[#9BD8FF]/70 capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
-                      <span className="text-[#E6FBFF]">{Array.isArray(value) ? value.join(', ') : String(value)}</span>
+              <div className="flex-1">
+                <h3 className="text-xl font-semibold text-[#E6FBFF] mb-2">Automatic Model Selection</h3>
+                <p className="text-[#9BD8FF] mb-4">
+                  We've analyzed your dataset and automatically selected the best model for you.
+                </p>
+                
+                {autoSelectedModel ? (
+                  <div className="bg-[#0b1220]/50 border border-[#122033] rounded-lg p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="p-4 bg-gradient-to-br from-[#00FFA0]/20 to-transparent rounded-xl border border-[#00FFA0]/30">
+                          {getModelIcon(autoSelectedModel.icon)}
+                        </div>
+                        <div>
+                          <h4 className="text-2xl font-bold text-[#E6FBFF]">{autoSelectedModel.name}</h4>
+                          <p className="text-[#9BD8FF] mt-1">{autoSelectedModel.description}</p>
+                        </div>
+                      </div>
+                      <CheckCircle className="w-12 h-12 text-[#00FFA0]" />
                     </div>
-                  ))}
-                </div>
-              </div>
+                    
+                    <div className="flex items-center gap-2 text-sm">
+                      <Info className="w-4 h-4 text-[#00F3FF]" />
+                      <span className="text-[#9BD8FF]">Best for: {autoSelectedModel.bestFor}</span>
+                    </div>
 
-              {/* Select Button */}
-              <button className={`w-full py-3 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
-                selectedModel?.id === model.id
-                  ? 'bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] text-white shadow-lg'
-                  : 'bg-[#0b1220] border border-[#122033] text-[#00F3FF] hover:border-[#00F3FF] hover:shadow-[0_0_15px_rgba(0,243,255,0.2)]'
-              }`}>
-                {selectedModel?.id === model.id ? 'Selected' : 'Select Model'}
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                    <div className="pt-4 border-t border-[#122033]">
+                      <label className="block text-sm font-medium text-[#9BD8FF] mb-2">
+                        Task Type
+                      </label>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setTaskType('classification')}
+                          className={`flex-1 px-4 py-2 rounded-lg border transition-all ${
+                            taskType === 'classification'
+                              ? 'bg-[#00F3FF]/10 border-[#00F3FF] text-[#00F3FF]'
+                              : 'border-[#122033] text-[#9BD8FF] hover:border-[#00F3FF]/50'
+                          }`}
+                        >
+                          Classification
+                        </button>
+                        <button
+                          onClick={() => setTaskType('regression')}
+                          className={`flex-1 px-4 py-2 rounded-lg border transition-all ${
+                            taskType === 'regression'
+                              ? 'bg-[#00F3FF]/10 border-[#00F3FF] text-[#00F3FF]'
+                              : 'border-[#122033] text-[#9BD8FF] hover:border-[#00F3FF]/50'
+                          }`}
+                        >
+                          Regression
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={confirmAutoSelection}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-[#00FFA0] to-[#00D67F] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,255,160,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle className="w-5 h-5" />
+                      Confirm Auto Selection
+                      <ArrowRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-[#0b1220]/50 border border-[#FF3B6B]/30 rounded-lg p-6 text-center">
+                    <AlertTriangle className="w-12 h-12 text-[#FFB84D] mx-auto mb-3" />
+                    <p className="text-[#9BD8FF]">
+                      No dataset detected. Please upload a dataset first to enable auto selection.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* Configuration Panel */}
-      {showConfig && selectedModel && (
-        <div className="max-w-2xl mx-auto bg-[#121628]/50 border border-[#122033] rounded-xl p-8">
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-6">
-              <Settings className="w-6 h-6 text-[#00F3FF]" />
-              <h2 className="text-2xl font-bold text-[#E6FBFF]">Configure {selectedModel.name}</h2>
-            </div>
-
-            {/* Task Type Selection */}
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-[#E6FBFF]">Task Type</label>
-              <div className="flex space-x-4">
-                {(['classification', 'regression'] as const).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => setTaskType(type)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                      taskType === type
-                        ? 'bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] text-white'
-                        : 'bg-[#0b1220] border border-[#122033] text-[#9BD8FF] hover:border-[#00F3FF]/50'
-                    }`}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
+          {/* Info about Auto Mode */}
+          <div className="bg-[#0b1220]/30 border border-[#122033] rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-[#00F3FF] mt-0.5" />
+              <div className="text-sm text-[#9BD8FF]">
+                <p className="font-medium text-[#E6FBFF] mb-1">How Auto Mode Works:</p>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li>Tabular Data (CSV) → Decision Tree</li>
+                  <li>Image Data → CNN</li>
+                  <li>Text/Sequential Data → RNN</li>
+                </ul>
               </div>
             </div>
-
-            {/* Hyperparameters */}
-            <div className="grid md:grid-cols-2 gap-6">
-              {Object.entries(selectedModel.defaultConfig).map(([key, value]) => (
-                <div key={key} className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium text-[#E6FBFF]">
-                    {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                    <Info className="w-4 h-4 text-[#9BD8FF] cursor-help" />
-                  </label>
-                  {typeof value === 'number' ? (
-                    <div className="space-y-2">
-                      <input
-                        type="range"
-                        min={0}
-                        max={key === 'learningRate' ? 0.1 : 200}
-                        step={key === 'learningRate' ? 0.001 : 1}
-                        defaultValue={value}
-                        className="w-full h-2 bg-[#0b1220] rounded-lg appearance-none cursor-pointer slider"
-                      />
-                      <div className="text-xs text-[#9BD8FF] text-right">{value}</div>
-                    </div>
-                  ) : (
-                    <select className="w-full px-3 py-2 bg-[#0b1220] border border-[#122033] rounded-lg text-[#E6FBFF] focus:border-[#00F3FF] focus:outline-none">
-                      <option value={String(value)}>{String(value)}</option>
-                    </select>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Confirm Button */}
-            <button
-              onClick={confirmSelection}
-              className="w-full py-4 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-            >
-              Confirm Selection
-              <ArrowRight className="w-5 h-5" />
-            </button>
           </div>
         </div>
       )}
 
-      <style>{`
-        .slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: linear-gradient(45deg, #00F3FF, #FF00D0);
-          cursor: pointer;
-          box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
-        }
-        
-        .slider::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: linear-gradient(45deg, #00F3FF, #FF00D0);
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
-        }
-      `}</style>
+      {/* MANUAL MODE Content */}
+      {mode === 'manual' && (
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="bg-[#121628]/50 border border-[#00F3FF]/30 rounded-xl p-6 mb-6">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-[#00F3FF]/10 rounded-lg">
+                <Settings className="w-8 h-8 text-[#00F3FF]" />
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-[#E6FBFF] mb-2">Manual Model Selection</h3>
+                <p className="text-[#9BD8FF]">
+                  Choose a model manually. The system will validate compatibility with your dataset.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Model Grid */}
+          <div className="grid md:grid-cols-3 gap-6">
+            {models.map((model) => {
+              const validation = validateCompatibility(model);
+              const isCompatible = validation.compatible;
+
+              return (
+                <div
+                  key={model.id}
+                  className={`bg-[#121628]/50 border rounded-xl p-6 transition-all duration-300 cursor-pointer ${
+                    selectedModel?.id === model.id
+                      ? 'border-[#00F3FF] shadow-[0_0_30px_rgba(0,243,255,0.2)] scale-105'
+                      : isCompatible
+                      ? 'border-[#122033] hover:border-[#00F3FF]/50 hover:scale-105'
+                      : 'border-[#FF3B6B]/30 opacity-60 cursor-not-allowed'
+                  }`}
+                  onClick={() => isCompatible && handleModelSelect(model)}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`p-4 rounded-xl border ${
+                      selectedModel?.id === model.id
+                        ? 'bg-[#00F3FF]/10 border-[#00F3FF]'
+                        : isCompatible
+                        ? 'bg-gradient-to-br from-[#00F3FF]/10 to-transparent border-[#122033]'
+                        : 'bg-[#FF3B6B]/10 border-[#FF3B6B]/30'
+                    }`}>
+                      {getModelIcon(model.icon)}
+                    </div>
+                    {!isCompatible && (
+                      <AlertTriangle className="w-6 h-6 text-[#FFB84D]" />
+                    )}
+                    {selectedModel?.id === model.id && (
+                      <CheckCircle className="w-8 h-8 text-[#00F3FF]" />
+                    )}
+                  </div>
+
+                  <h3 className="text-xl font-bold text-[#E6FBFF] mb-2">{model.name}</h3>
+                  <p className="text-[#9BD8FF] text-sm mb-4">{model.description}</p>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className={`w-2 h-2 rounded-full ${isCompatible ? 'bg-[#00FFA0]' : 'bg-[#FF3B6B]'}`}></div>
+                      <span className="text-[#9BD8FF]">Best for: {model.bestFor}</span>
+                    </div>
+                    {!isCompatible && (
+                      <div className="mt-3 p-2 bg-[#FF3B6B]/10 border border-[#FF3B6B]/30 rounded text-xs text-[#FFB84D]">
+                        {validation.reason}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Configuration Panel */}
+          {selectedModel && showConfig && (
+            <div className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6 space-y-6">
+              <h3 className="text-xl font-semibold text-[#E6FBFF]">Configure {selectedModel.name}</h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-[#9BD8FF] mb-2">
+                  Task Type
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setTaskType('classification')}
+                    className={`flex-1 px-4 py-2 rounded-lg border transition-all ${
+                      taskType === 'classification'
+                        ? 'bg-[#00F3FF]/10 border-[#00F3FF] text-[#00F3FF]'
+                        : 'border-[#122033] text-[#9BD8FF] hover:border-[#00F3FF]/50'
+                    }`}
+                  >
+                    Classification
+                  </button>
+                  <button
+                    onClick={() => setTaskType('regression')}
+                    className={`flex-1 px-4 py-2 rounded-lg border transition-all ${
+                      taskType === 'regression'
+                        ? 'bg-[#00F3FF]/10 border-[#00F3FF] text-[#00F3FF]'
+                        : 'border-[#122033] text-[#9BD8FF] hover:border-[#00F3FF]/50'
+                    }`}
+                  >
+                    Regression
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={confirmSelection}
+                className="w-full px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-5 h-5" />
+                Confirm Selection
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

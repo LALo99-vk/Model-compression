@@ -5,7 +5,7 @@ Run with: uvicorn main:app --reload
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import dataset, model, training, evaluation, compression, comparison
+from routers import dataset, model, training, evaluation, compression, comparison, validation
 import os
 
 # Create necessary directories
@@ -35,6 +35,7 @@ app.include_router(training.router, prefix="/api/training", tags=["Training"])
 app.include_router(evaluation.router, prefix="/api/evaluation", tags=["Evaluation"])
 app.include_router(compression.router, prefix="/api/compression", tags=["Compression"])
 app.include_router(comparison.router, prefix="/api/comparison", tags=["Comparison"])
+app.include_router(validation.router, prefix="/api/validation", tags=["Validation"])
 
 @app.get("/")
 async def root():

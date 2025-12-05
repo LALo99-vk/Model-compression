@@ -44,16 +44,25 @@ interface ComparisonData {
   };
 }
 
-const Comparison = () => {
+const Results = () => {
   const [comparisonData, setComparisonData] = useState<ComparisonData | null>(null);
   const [loading, setLoading] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [viewMode, setViewMode] = useState<'comparison' | 'original' | 'compressed'>('comparison');
 
-  const { showError } = useToast();
+  const { showError, showInfo } = useToast();
   
   useEffect(() => {
+    console.log('🔄 Results page mounted - loading comparison data...');
     loadComparison();
   }, []);
+  
+  // Debug: Log when comparison data changes
+  useEffect(() => {
+    if (comparisonData) {
+      console.log('📊 Comparison data updated:', comparisonData);
+    }
+  }, [comparisonData]);
 
   useEffect(() => {
     if (comparisonData) {
@@ -63,35 +72,135 @@ const Comparison = () => {
     }
   }, [comparisonData]);
 
+  // STEP 7: Download functions
+  const downloadOriginalModel = async () => {
+    try {
+      console.log('📥 Downloading original model...');
+      const response = await fetch('http://localhost:8000/api/model/download/original');
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
+      console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
+      
+      // Get filename from Content-Disposition header
+      const disposition = response.headers.get('content-disposition');
+      let filename = 'original_model.pt';
+      if (disposition && disposition.includes('filename=')) {
+        filename = disposition.split('filename=')[1].replace(/"/g, '');
+      }
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
+    } catch (error) {
+      console.error('Download failed:', error);
+      showError('Download Failed', 'Could not download original model');
+    }
+  };
+
+  const downloadCompressedModel = async () => {
+    try {
+      console.log('📥 Downloading compressed model...');
+      const response = await fetch('http://localhost:8000/api/model/download/compressed');
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
+      console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
+      
+      // Get filename from Content-Disposition header
+      const disposition = response.headers.get('content-disposition');
+      let filename = 'compressed_model.pt';
+      if (disposition && disposition.includes('filename=')) {
+        filename = disposition.split('filename=')[1].replace(/"/g, '');
+      }
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      showSuccess('Download Complete', `Compressed model downloaded (${sizeMB} MB)`);
+    } catch (error) {
+      console.error('Download failed:', error);
+      showError('Download Failed', 'Could not download compressed model');
+    }
+  };
+
   const loadComparison = async () => {
     setLoading(true);
     try {
       const data = await comparisonService.compare();
+      
+      // Backend returns nested format with file_size, accuracy, detailed_metrics
+      // Extract real values
+      const originalSizeMB = data.file_size?.original_mb ?? 0;
+      const compressedSizeMB = data.file_size?.compressed_mb ?? 0;
+      const originalParams = data.detailed_metrics?.original?.parameters ?? 0;
+      const compressedParams = data.detailed_metrics?.compressed?.parameters ?? 0;
+      const sizeReduction = data.file_size?.reduction_percent ?? 0;
+      
+      const originalAcc = data.accuracy?.original ?? data.detailed_metrics?.original?.accuracy ?? 0;
+      const compressedAcc = data.accuracy?.compressed ?? data.detailed_metrics?.compressed?.accuracy ?? 0;
+      
       setComparisonData({
         original: {
-          accuracy: data.accuracy.original,
-          precision: data.detailed_metrics.original?.precision ?? 0,
-          recall: data.detailed_metrics.original?.recall ?? 0,
-          f1Score: data.detailed_metrics.original?.f1_score ?? 0,
-          inferenceTime: data.inference_time.original_ms,
-          modelSize: data.file_size.original_mb,
-          parameters: data.detailed_metrics.original?.parameters ?? 0,
+          accuracy: originalAcc,
+          precision: data.detailed_metrics?.original?.precision ?? 0,
+          recall: data.detailed_metrics?.original?.recall ?? 0,
+          f1Score: data.detailed_metrics?.original?.f1_score ?? 0,
+          inferenceTime: data.inference_time?.original_ms ?? 0,
+          modelSize: originalSizeMB,
+          parameters: originalParams,
         },
         compressed: {
-          accuracy: data.accuracy.compressed,
-          precision: data.detailed_metrics.compressed?.precision ?? 0,
-          recall: data.detailed_metrics.compressed?.recall ?? 0,
-          f1Score: data.detailed_metrics.compressed?.f1_score ?? 0,
-          inferenceTime: data.inference_time.compressed_ms,
-          modelSize: data.file_size.compressed_mb,
-          parameters: data.detailed_metrics.compressed?.parameters ?? 0,
+          accuracy: compressedAcc,
+          precision: data.detailed_metrics?.compressed?.precision ?? 0,
+          recall: data.detailed_metrics?.compressed?.recall ?? 0,
+          f1Score: data.detailed_metrics?.compressed?.f1_score ?? 0,
+          inferenceTime: data.inference_time?.compressed_ms ?? 0,
+          modelSize: compressedSizeMB,
+          parameters: compressedParams,
         },
         improvements: {
-          sizeReduction: data.file_size.reduction_percent,
-          accuracyPreserved: 100 + data.accuracy.difference_percent,
-          speedImprovement: data.inference_time.speedup,
+          sizeReduction: sizeReduction,
+          accuracyPreserved: 100 + (data.accuracy?.difference_percent ?? 0),
+          speedImprovement: data.inference_time?.speedup ?? 1,
         },
       });
+      
+      console.log('✅ Raw API response:', data);
+      console.log('✅ Extracted values:', {
+        originalSizeMB,
+        compressedSizeMB,
+        originalParams,
+        compressedParams,
+        sizeReduction
+      });
+      console.log('✅ Setting comparison data:', {
+        original: { size: originalSizeMB, params: originalParams },
+        compressed: { size: compressedSizeMB, params: compressedParams },
+        reduction: sizeReduction
+      });
+      
     } catch (error) {
       // Don't show error if no comparison data exists yet
       if ((error as any)?.response?.status !== 404) {
@@ -130,6 +239,9 @@ const Comparison = () => {
 
   const renderHeroStats = () => {
     if (!comparisonData) return null;
+    
+    // Hide improvement stats when viewing individual models
+    if (viewMode !== 'comparison') return null;
     
     return (
       <div className="grid md:grid-cols-3 gap-8 mb-12">
@@ -174,6 +286,10 @@ const Comparison = () => {
 
   const renderComparisonTable = () => {
     if (!comparisonData) return null;
+    
+    // Filter columns based on view mode
+    const showOriginal = viewMode === 'comparison' || viewMode === 'original';
+    const showCompressed = viewMode === 'comparison' || viewMode === 'compressed';
     
     const metrics = [
       { 
@@ -236,15 +352,17 @@ const Comparison = () => {
 
     return (
       <div className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6 mb-8">
-        <h2 className="text-2xl font-semibold text-[#E6FBFF] mb-6">Detailed Comparison</h2>
+        <h2 className="text-2xl font-semibold text-[#E6FBFF] mb-6">
+          {viewMode === 'comparison' ? 'Detailed Comparison' : viewMode === 'original' ? 'Original Model Metrics' : 'Compressed Model Metrics'}
+        </h2>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-[#122033]">
                 <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Metric</th>
-                <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Original Model</th>
-                <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Compressed Model</th>
-                <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Change</th>
+                {showOriginal && <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Original Model</th>}
+                {showCompressed && <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Compressed Model</th>}
+                {viewMode === 'comparison' && <th className="text-left py-4 px-4 text-[#9BD8FF] font-medium">Change</th>}
               </tr>
             </thead>
             <tbody>
@@ -260,14 +378,16 @@ const Comparison = () => {
                         <span className="text-[#E6FBFF] font-medium">{metric.name}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-[#9BD8FF]">{metric.format(metric.original)}</td>
-                    <td className="py-4 px-4 text-[#E6FBFF] font-semibold">{metric.format(metric.compressed)}</td>
-                    <td className="py-4 px-4">
-                      <div className={`flex items-center gap-1 font-medium ${change.color}`}>
-                        <span>{change.icon}</span>
-                        <span>{metric.format(change.value)}</span>
-                      </div>
-                    </td>
+                    {showOriginal && <td className="py-4 px-4 text-[#9BD8FF]">{metric.format(metric.original)}</td>}
+                    {showCompressed && <td className="py-4 px-4 text-[#E6FBFF] font-semibold">{metric.format(metric.compressed)}</td>}
+                    {viewMode === 'comparison' && (
+                      <td className="py-4 px-4">
+                        <div className={`flex items-center gap-1 font-medium ${change.color}`}>
+                          <span>{change.icon}</span>
+                          <span>{metric.format(change.value)}</span>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -281,6 +401,9 @@ const Comparison = () => {
   const renderBarChart = () => {
     if (!comparisonData) return null;
     
+    const showOriginal = viewMode === 'comparison' || viewMode === 'original';
+    const showCompressed = viewMode === 'comparison' || viewMode === 'compressed';
+    
     const chartData = [
       { name: 'Accuracy', original: comparisonData.original.accuracy * 100, compressed: comparisonData.compressed.accuracy * 100 },
       { name: 'Precision', original: comparisonData.original.precision * 100, compressed: comparisonData.compressed.precision * 100 },
@@ -292,7 +415,7 @@ const Comparison = () => {
       <div className="bg-[#121628]/50 border border-[#122033] rounded-xl p-6">
         <h3 className="text-xl font-semibold text-[#E6FBFF] mb-4 flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-[#00F3FF]" />
-          Performance Comparison
+          {viewMode === 'comparison' ? 'Performance Comparison' : 'Performance Metrics'}
         </h3>
         <div className="space-y-6">
           {chartData.map((item) => (
@@ -300,37 +423,43 @@ const Comparison = () => {
               <div className="flex justify-between text-sm">
                 <span className="text-[#9BD8FF]">{item.name}</span>
                 <div className="flex gap-4">
-                  <span className="text-[#00F3FF]">Original: {item.original.toFixed(1)}%</span>
-                  <span className="text-[#FF00D0]">Compressed: {item.compressed.toFixed(1)}%</span>
+                  {showOriginal && <span className="text-[#00F3FF]">Original: {item.original.toFixed(1)}%</span>}
+                  {showCompressed && <span className="text-[#FF00D0]">Compressed: {item.compressed.toFixed(1)}%</span>}
                 </div>
               </div>
               <div className="flex gap-2">
-                <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
-                  <div 
-                    className="h-full bg-[#00F3FF] transition-all duration-1000 ease-out"
-                    style={{ width: `${item.original}%` }}
-                  ></div>
-                </div>
-                <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
-                  <div 
-                    className="h-full bg-[#FF00D0] transition-all duration-1000 ease-out"
-                    style={{ width: `${item.compressed}%` }}
-                  ></div>
-                </div>
+                {showOriginal && (
+                  <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
+                    <div 
+                      className="h-full bg-[#00F3FF] transition-all duration-1000 ease-out"
+                      style={{ width: `${item.original}%` }}
+                    ></div>
+                  </div>
+                )}
+                {showCompressed && (
+                  <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
+                    <div 
+                      className="h-full bg-[#FF00D0] transition-all duration-1000 ease-out"
+                      style={{ width: `${item.compressed}%` }}
+                    ></div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
-        <div className="flex justify-center gap-6 mt-6 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-[#00F3FF] rounded-full"></div>
-            <span className="text-[#9BD8FF]">Original Model</span>
+        {viewMode === 'comparison' && (
+          <div className="flex justify-center gap-6 mt-6 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-[#00F3FF] rounded-full"></div>
+              <span className="text-[#9BD8FF]">Original Model</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-[#FF00D0] rounded-full"></div>
+              <span className="text-[#9BD8FF]">Compressed Model</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-[#FF00D0] rounded-full"></div>
-            <span className="text-[#9BD8FF]">Compressed Model</span>
-          </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -594,18 +723,54 @@ const Comparison = () => {
       {/* Header */}
       <div className="text-center space-y-3">
         <h1 className="text-4xl font-bold bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] bg-clip-text text-transparent">
-          Model Comparison Results
+          Model Results
         </h1>
         <p className="text-lg text-[#9BD8FF]">
-          Comprehensive analysis of original vs compressed model performance
+          Comprehensive analysis of model performance
         </p>
         {comparisonData && (
           <div className="mt-2 flex items-center justify-center gap-2 text-sm">
             <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md">
-              Original vs Compressed Model Comparison
+              {viewMode === 'comparison' ? 'Original vs Compressed Model' : viewMode === 'original' ? 'Original Model' : 'Compressed Model'}
             </span>
           </div>
         )}
+      </div>
+
+      {/* View Mode Toggle */}
+      <div className="flex justify-center">
+        <div className="flex space-x-2 bg-[#0b1220]/50 p-2 rounded-lg border border-[#122033]">
+          <button
+            onClick={() => setViewMode('comparison')}
+            className={`px-6 py-2 rounded-lg font-semibold transition-all duration-200 ${
+              viewMode === 'comparison'
+                ? 'bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] text-white shadow-lg'
+                : 'text-[#9BD8FF] hover:text-[#00F3FF] hover:bg-[#121628]'
+            }`}
+          >
+            Compare Both
+          </button>
+          <button
+            onClick={() => setViewMode('original')}
+            className={`px-6 py-2 rounded-lg font-semibold transition-all duration-200 ${
+              viewMode === 'original'
+                ? 'bg-gradient-to-r from-[#00F3FF] to-[#0088FF] text-white shadow-lg'
+                : 'text-[#9BD8FF] hover:text-[#00F3FF] hover:bg-[#121628]'
+            }`}
+          >
+            Original Only
+          </button>
+          <button
+            onClick={() => setViewMode('compressed')}
+            className={`px-6 py-2 rounded-lg font-semibold transition-all duration-200 ${
+              viewMode === 'compressed'
+                ? 'bg-gradient-to-r from-[#00FFA0] to-[#00F3FF] text-white shadow-lg'
+                : 'text-[#9BD8FF] hover:text-[#00F3FF] hover:bg-[#121628]'
+            }`}
+          >
+            Compressed Only
+          </button>
+        </div>
       </div>
 
       {/* Hero Stats */}
@@ -633,30 +798,42 @@ const Comparison = () => {
       {/* File Size Visualization */}
       {renderFileSizeVisualization()}
 
-      {/* Action Buttons */}
+      {/* Action Buttons - STEP 7: Download Models */}
       <div className="flex flex-wrap gap-4 justify-center">
-        <button className="px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center gap-2">
+        <button 
+          onClick={downloadOriginalModel}
+          className="px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#0088FF] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
+        >
+          <Download className="w-5 h-5" />
+          Download Original Model
+        </button>
+        
+        <button 
+          onClick={downloadCompressedModel}
+          className="px-6 py-3 bg-gradient-to-r from-[#00FFA0] to-[#00D67F] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,255,160,0.3)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
+        >
+          <FileDown className="w-5 h-5" />
+          Download Compressed Model
+        </button>
+        
+        <button className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#00F3FF] hover:border-[#00F3FF] hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2">
           <Download className="w-5 h-5" />
           Download Comparison Report
         </button>
         
-        <button className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#00FFA0] hover:border-[#00FFA0] hover:shadow-[0_0_20px_rgba(0,255,160,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2">
-          <FileDown className="w-5 h-5" />
-          Export Compressed Model
-        </button>
-        
-        <button className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#FF00D0] hover:border-[#FF00D0] hover:shadow-[0_0_20px_rgba(255,0,208,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2">
+        <button 
+          onClick={() => {
+            const event = new CustomEvent('navigate-to', { detail: 'upload' });
+            window.dispatchEvent(event);
+          }}
+          className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#FF00D0] hover:border-[#FF00D0] hover:shadow-[0_0_20px_rgba(255,0,208,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
+        >
           <RotateCcw className="w-5 h-5" />
           Start New Training
-        </button>
-        
-        <button className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#9BD8FF] hover:border-[#9BD8FF] hover:shadow-[0_0_20px_rgba(155,216,255,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2">
-          <Share2 className="w-5 h-5" />
-          Share Results
         </button>
       </div>
     </div>
   );
 };
 
-export default Comparison;
+export default Results;

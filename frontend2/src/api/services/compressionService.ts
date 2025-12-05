@@ -8,9 +8,21 @@ export interface CompressRequest {
   distillation_alpha?: number;
 }
 
+export interface ComprehensiveCompressionRequest {
+  pruning_amount?: number;
+  quantization_bits?: number;
+  distillation_temperature?: number;
+  distillation_alpha?: number;
+}
+
 export const compressionService = {
   async compress(req: CompressRequest): Promise<any> {
     const res = await api.post('/api/compression/compress', req);
+    return res.data as any;
+  },
+
+  async compressComprehensive(req: ComprehensiveCompressionRequest): Promise<any> {
+    const res = await api.post('/api/compression/compress/comprehensive', req);
     return res.data as any;
   },
 

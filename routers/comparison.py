@@ -1,11 +1,16 @@
 """
 Comparison Router - Compares original vs compressed model
+All values are calculated from real metrics - no dummy data
 """
 
 from fastapi import APIRouter, HTTPException
 import json
 import os
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -38,23 +43,34 @@ async def compare_models():
     with open(compressed_metrics_path, "r") as f:
         compressed_metrics = json.load(f)
 
-    # Get file sizes
-    original_model_path = "models/original_model.pt"
-    compressed_model_path = "models/compressed_model.pt"
-
-    # Try different extensions
-    for ext in ['.pt', '.h5', '.pkl']:
-        if os.path.exists(original_model_path.replace('.pt', ext)):
-            original_model_path = original_model_path.replace('.pt', ext)
+    # Get file sizes - find actual model files
+    original_model_path = None
+    compressed_model_path = None
+    
+    # Try different extensions for original model
+    for ext in ['.pkl', '.pt', '.h5']:
+        candidate_path = f"models/original_model{ext}"
+        if os.path.exists(candidate_path):
+            original_model_path = candidate_path
             break
-
-    for ext in ['.pt', '.h5', '.pkl']:
-        if os.path.exists(compressed_model_path.replace('.pt', ext)):
-            compressed_model_path = compressed_model_path.replace('.pt', ext)
+    
+    # Try different extensions for compressed model
+    for ext in ['.pkl', '.pt', '.h5']:
+        candidate_path = f"models/compressed_model{ext}"
+        if os.path.exists(candidate_path):
+            compressed_model_path = candidate_path
             break
-
-    original_size = os.path.getsize(original_model_path) if os.path.exists(original_model_path) else 0
-    compressed_size = os.path.getsize(compressed_model_path) if os.path.exists(compressed_model_path) else 0
+    
+    # Calculate real file sizes
+    original_size = os.path.getsize(original_model_path) if original_model_path and os.path.exists(original_model_path) else 0
+    compressed_size = os.path.getsize(compressed_model_path) if compressed_model_path and os.path.exists(compressed_model_path) else 0
+    
+    logger.info(f"Model file sizes - Original: {original_size} bytes, Compressed: {compressed_size} bytes")
+    
+    if original_size == 0:
+        logger.warning("Original model file not found - size will be 0")
+    if compressed_size == 0:
+        logger.warning("Compressed model file not found - size will be 0")
 
     # Calculate differences
     size_reduction = ((original_size - compressed_size) / original_size * 100) if original_size > 0 else 0

@@ -16,7 +16,7 @@ git clone <repo-url>
 cd Model-compression
 Create Virtual Environment
 
-macOS/Linux: python3 -m venv .venv && source .venv/bin/activate
+macOS/Linux: python3 -m venv .venv && 
 Windows (PowerShell): python -m venv .venv ; .\.venv\Scripts\Activate.ps1
 Windows (CMD): python -m venv .venv && .\.venv\Scripts\activate.bat
 Install Python Dependencies

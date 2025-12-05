@@ -5,21 +5,28 @@ import { useToast } from '../components/ui/ToastContainer';
 
 export const useBackendStatus = () => {
   const setConnected = useAppStore((s) => s.setBackendConnected);
-  const { showSuccess, showError } = useToast();
+  const { showError } = useToast();
 
   useEffect(() => {
     let mounted = true;
+    let wasConnected = false;
+    
     const check = async () => {
       try {
         await api.get('/health');
         if (mounted) {
           setConnected(true);
-          showSuccess('Backend Connected', 'FastAPI is reachable');
+          wasConnected = true;
+          // Don't show success toast - connection is visible in navbar
         }
       } catch {
         if (mounted) {
           setConnected(false);
-          showError('Backend Disconnected', 'FastAPI is not reachable');
+          // Only show error if we were previously connected
+          if (wasConnected) {
+            showError('Backend Disconnected');
+            wasConnected = false;
+          }
         }
       }
     };
@@ -29,5 +36,5 @@ export const useBackendStatus = () => {
       mounted = false;
       clearInterval(interval);
     };
-  }, [setConnected, showSuccess, showError]);
+  }, [setConnected, showError]);
 };

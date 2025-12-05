@@ -12,17 +12,19 @@ router = APIRouter()
 
 UPLOAD_DIR = "uploads"
 MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB
-ALLOWED_EXTENSIONS = {".csv", ".jpg", ".jpeg", ".png", ".bmp"}
+ALLOWED_EXTENSIONS = {".csv", ".txt", ".jpg", ".jpeg", ".png", ".bmp"}
 
 
 @router.post("/upload")
 async def upload_dataset(files: List[UploadFile] = File(...)):
     """
-    Upload dataset files (CSV or images)
+    Upload dataset files (CSV or images) or folders
     - Validates file types and size
     - Stores in /uploads folder
+    - Preserves folder structure for image datasets
     """
     uploaded_files = []
+    folders = set()
 
     for file in files:
         # Validate file extension
@@ -44,8 +46,23 @@ async def upload_dataset(files: List[UploadFile] = File(...)):
                 detail=f"File too large: {file_size} bytes. Max: {MAX_FILE_SIZE} bytes"
             )
 
+        # Preserve folder structure (extract folder name from path)
+        # Browser sends paths like "my_images/cat/img1.jpg"
+        file_parts = Path(file.filename).parts
+        
+        if len(file_parts) > 1:
+            # This is part of a folder upload
+            folder_name = file_parts[0]
+            folders.add(folder_name)
+            file_path = os.path.join(UPLOAD_DIR, *file_parts)
+        else:
+            # Single file upload
+            file_path = os.path.join(UPLOAD_DIR, file.filename)
+
+        # Create parent directories if needed
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
         # Save file
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as f:
             f.write(content)
 
@@ -58,24 +75,49 @@ async def upload_dataset(files: List[UploadFile] = File(...)):
     return {
         "message": "Files uploaded successfully",
         "files": uploaded_files,
+        "folders": list(folders),
         "count": len(uploaded_files)
     }
 
 
 @router.get("/list")
 async def list_datasets():
-    """List all uploaded datasets"""
+    """List all uploaded datasets (files and folders)"""
     if not os.path.exists(UPLOAD_DIR):
         return {"files": []}
 
     files = []
     for filename in os.listdir(UPLOAD_DIR):
         file_path = os.path.join(UPLOAD_DIR, filename)
+        
         if os.path.isfile(file_path):
+            # Single file
             files.append({
                 "filename": filename,
                 "size": os.path.getsize(file_path),
-                "path": file_path
+                "path": file_path,
+                "type": "file"
+            })
+        elif os.path.isdir(file_path):
+            # Folder (image dataset)
+            # Calculate total size of all files in folder
+            total_size = sum(
+                os.path.getsize(os.path.join(dirpath, filename))
+                for dirpath, _, filenames in os.walk(file_path)
+                for filename in filenames
+            )
+            # Count total images
+            image_count = sum(
+                1 for dirpath, _, filenames in os.walk(file_path)
+                for f in filenames if Path(f).suffix.lower() in ALLOWED_EXTENSIONS
+            )
+            
+            files.append({
+                "filename": filename,
+                "size": total_size,
+                "path": file_path,
+                "type": "folder",
+                "image_count": image_count
             })
 
     return {"files": files, "count": len(files)}
@@ -83,14 +125,18 @@ async def list_datasets():
 
 @router.delete("/delete/{filename}")
 async def delete_dataset(filename: str):
-    """Delete a specific dataset"""
+    """Delete a specific dataset (file or folder)"""
     file_path = os.path.join(UPLOAD_DIR, filename)
 
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="File/folder not found")
 
-    os.remove(file_path)
-    return {"message": f"File {filename} deleted successfully"}
+    if os.path.isfile(file_path):
+        os.remove(file_path)
+    elif os.path.isdir(file_path):
+        shutil.rmtree(file_path)
+    
+    return {"message": f"Dataset {filename} deleted successfully"}
 
 
 @router.delete("/clear")
