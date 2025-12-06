@@ -8,6 +8,10 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import json
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -138,9 +142,30 @@ async def get_current_selection():
 async def download_original_model():
     """
     Download the original trained model
-    Auto-detects file type (.pt for PyTorch, .pkl for scikit-learn)
+    Uses exact file from comparison report to ensure size matches UI
     """
-    # Check for model files in priority order
+    # First, try to get exact path from comparison report
+    comparison_report_path = "results/compression_comparison_report.json"
+    if os.path.exists(comparison_report_path):
+        try:
+            with open(comparison_report_path, "r") as f:
+                report = json.load(f)
+            # Check if original model path is stored
+            original_path = report.get("original", {}).get("model_path")
+            if original_path and os.path.exists(original_path):
+                _, ext = os.path.splitext(original_path)
+                filename = f"original_model{ext}"
+                file_size_mb = os.path.getsize(original_path) / (1024 * 1024)
+                logger.info(f"✅ Serving original model from report: {filename} ({file_size_mb:.4f} MB)")
+                return FileResponse(
+                    path=original_path,
+                    media_type="application/octet-stream",
+                    filename=filename
+                )
+        except Exception as e:
+            logger.warning(f"Could not read comparison report: {e}")
+    
+    # Fallback: Check for model files in priority order
     possible_files = [
         ("models/original_model.pt", "application/octet-stream", "original_model.pt"),
         ("models/original_model.pkl", "application/octet-stream", "original_model.pkl"),
@@ -150,7 +175,7 @@ async def download_original_model():
     for file_path, media_type, filename in possible_files:
         if os.path.exists(file_path):
             file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-            print(f"✅ Serving {filename} ({file_size_mb:.4f} MB)")
+            logger.info(f"✅ Serving {filename} ({file_size_mb:.4f} MB)")
             return FileResponse(
                 path=file_path,
                 media_type=media_type,
@@ -167,9 +192,30 @@ async def download_original_model():
 async def download_compressed_model():
     """
     Download the compressed model
-    Auto-detects file type (.pt for PyTorch, .pkl for scikit-learn)
+    Uses exact file from comparison report to ensure size matches UI
     """
-    # Check for compressed model files
+    # First, try to get exact path from comparison report
+    comparison_report_path = "results/compression_comparison_report.json"
+    if os.path.exists(comparison_report_path):
+        try:
+            with open(comparison_report_path, "r") as f:
+                report = json.load(f)
+            # Check if compressed model path is stored
+            compressed_path = report.get("compressed", {}).get("model_path")
+            if compressed_path and os.path.exists(compressed_path):
+                _, ext = os.path.splitext(compressed_path)
+                filename = f"compressed_model{ext}"
+                file_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
+                logger.info(f"✅ Serving compressed model from report: {filename} ({file_size_mb:.4f} MB)")
+                return FileResponse(
+                    path=compressed_path,
+                    media_type="application/octet-stream",
+                    filename=filename
+                )
+        except Exception as e:
+            logger.warning(f"Could not read comparison report: {e}")
+    
+    # Fallback: Check for compressed model files
     possible_files = [
         ("models/compressed_model.pt", "application/octet-stream", "compressed_model.pt"),
         ("models/compressed_model.pkl", "application/octet-stream", "compressed_model.pkl"),
@@ -181,7 +227,7 @@ async def download_compressed_model():
     for file_path, media_type, filename in possible_files:
         if os.path.exists(file_path):
             file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-            print(f"✅ Serving {filename} ({file_size_mb:.4f} MB)")
+            logger.info(f"✅ Serving {filename} ({file_size_mb:.4f} MB)")
             return FileResponse(
                 path=file_path,
                 media_type=media_type,

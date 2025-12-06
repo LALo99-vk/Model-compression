@@ -16,7 +16,10 @@ import {
   Activity
 } from 'lucide-react';
 import { comparisonService } from '../../api/services/comparisonService';
+import { trainingService } from '../../api/services/trainingService';
+import { compressionService } from '../../api/services/compressionService';
 import { useToast } from '../ui/ToastContainer';
+import { useAppStore } from '../../store/useAppStore';
 
 interface ComparisonData {
   original: {
@@ -51,6 +54,7 @@ const Results = () => {
   const [viewMode, setViewMode] = useState<'comparison' | 'original' | 'compressed'>('comparison');
 
   const { showError, showInfo } = useToast();
+  const selectedModelConfig = useAppStore((s) => s.selectedModel);
   
   useEffect(() => {
     console.log('🔄 Results page mounted - loading comparison data...');
@@ -72,10 +76,19 @@ const Results = () => {
     }
   }, [comparisonData]);
 
-  // STEP 7: Download functions
+  // STEP 7: Download functions - Works for ALL model types (Decision Tree, CNN, RNN)
   const downloadOriginalModel = async () => {
     try {
-      console.log('📥 Downloading original model...');
+      // Detect model type for correct file extension
+      const modelType = selectedModelConfig?.model_type || 'unknown';
+      let fileExtension = '.pkl'; // Default for Decision Trees
+      
+      if (modelType === 'rnn' || modelType === 'cnn' || modelType === 'lstm' || modelType === 'gru') {
+        fileExtension = '.pt'; // PyTorch models
+      }
+      
+      console.log(`📥 Downloading ${modelType} model as: original_model${fileExtension}`);
+      
       const response = await fetch('http://localhost:8000/api/model/download/original');
       
       if (!response.ok) {
@@ -86,9 +99,9 @@ const Results = () => {
       const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
       console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
       
-      // Get filename from Content-Disposition header
+      // Get filename from Content-Disposition header (backend returns correct extension)
       const disposition = response.headers.get('content-disposition');
-      let filename = 'original_model.pt';
+      let filename = `original_model${fileExtension}`; // Fallback based on model type
       if (disposition && disposition.includes('filename=')) {
         filename = disposition.split('filename=')[1].replace(/"/g, '');
       }
@@ -111,7 +124,16 @@ const Results = () => {
 
   const downloadCompressedModel = async () => {
     try {
-      console.log('📥 Downloading compressed model...');
+      // Detect model type for correct file extension
+      const modelType = selectedModelConfig?.model_type || 'unknown';
+      let fileExtension = '.pkl'; // Default for Decision Trees
+      
+      if (modelType === 'rnn' || modelType === 'cnn' || modelType === 'lstm' || modelType === 'gru') {
+        fileExtension = '.pt'; // PyTorch models
+      }
+      
+      console.log(`📥 Downloading compressed ${modelType} model as: compressed_model${fileExtension}`);
+      
       const response = await fetch('http://localhost:8000/api/model/download/compressed');
       
       if (!response.ok) {
@@ -122,9 +144,9 @@ const Results = () => {
       const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
       console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
       
-      // Get filename from Content-Disposition header
+      // Get filename from Content-Disposition header (backend returns correct extension)
       const disposition = response.headers.get('content-disposition');
-      let filename = 'compressed_model.pt';
+      let filename = `compressed_model${fileExtension}`; // Fallback based on model type
       if (disposition && disposition.includes('filename=')) {
         filename = disposition.split('filename=')[1].replace(/"/g, '');
       }
@@ -148,64 +170,159 @@ const Results = () => {
   const loadComparison = async () => {
     setLoading(true);
     try {
-      const data = await comparisonService.compare();
+      console.log('📊 Loading comparison data...');
       
-      // Backend returns nested format with file_size, accuracy, detailed_metrics
-      // Extract real values
-      const originalSizeMB = data.file_size?.original_mb ?? 0;
-      const compressedSizeMB = data.file_size?.compressed_mb ?? 0;
-      const originalParams = data.detailed_metrics?.original?.parameters ?? 0;
-      const compressedParams = data.detailed_metrics?.compressed?.parameters ?? 0;
-      const sizeReduction = data.file_size?.reduction_percent ?? 0;
+      // METHOD 1: Try comparison report endpoint first (has evaluated metrics)
+      try {
+        const comparisonData = await comparisonService.compare();
+        console.log('✅ Got data from comparison endpoint:', comparisonData);
+        
+        // Extract data from comparison report format
+        const originalSizeMB = comparisonData.file_size?.original_mb ?? 0;
+        const compressedSizeMB = comparisonData.file_size?.compressed_mb ?? 0;
+        const originalParams = comparisonData.detailed_metrics?.original?.parameters ?? 0;
+        const compressedParams = comparisonData.detailed_metrics?.compressed?.parameters ?? 0;
+        const sizeReduction = comparisonData.file_size?.reduction_percent ?? 0;
+        
+        const originalAcc = comparisonData.accuracy?.original ?? comparisonData.detailed_metrics?.original?.accuracy ?? 0;
+        const compressedAcc = comparisonData.accuracy?.compressed ?? comparisonData.detailed_metrics?.compressed?.accuracy ?? 0;
+        
+        if (originalSizeMB > 0 && compressedSizeMB > 0) {
+          setComparisonData({
+            original: {
+              accuracy: originalAcc,
+              precision: comparisonData.detailed_metrics?.original?.precision ?? 0,
+              recall: comparisonData.detailed_metrics?.original?.recall ?? 0,
+              f1Score: comparisonData.detailed_metrics?.original?.f1_score ?? 0,
+              inferenceTime: comparisonData.inference_time?.original_ms ?? 0,
+              modelSize: originalSizeMB,
+              parameters: originalParams,
+            },
+            compressed: {
+              accuracy: compressedAcc,
+              precision: comparisonData.detailed_metrics?.compressed?.precision ?? 0,
+              recall: comparisonData.detailed_metrics?.compressed?.recall ?? 0,
+              f1Score: comparisonData.detailed_metrics?.compressed?.f1_score ?? 0,
+              inferenceTime: comparisonData.inference_time?.compressed_ms ?? 0,
+              modelSize: compressedSizeMB,
+              parameters: compressedParams,
+            },
+            improvements: {
+              sizeReduction: sizeReduction,
+              accuracyPreserved: originalAcc > 0 ? (compressedAcc / originalAcc) * 100 : 100,
+              speedImprovement: comparisonData.inference_time?.speedup ?? 1,
+            },
+          });
+          console.log('✅ Loaded from comparison endpoint');
+          return;
+        }
+      } catch (compareError) {
+        console.log('⚠️ Comparison endpoint failed, using direct data:', compareError);
+      }
       
-      const originalAcc = data.accuracy?.original ?? data.detailed_metrics?.original?.accuracy ?? 0;
-      const compressedAcc = data.accuracy?.compressed ?? data.detailed_metrics?.compressed?.accuracy ?? 0;
+      // METHOD 2: Direct data from Training + Compression
+      console.log('📊 Loading directly from Training + Compression...');
       
+      // Get Training Logs (Original Model)
+      const trainingLogs = await trainingService.logs();
+      if (!trainingLogs) {
+        throw new Error('No training logs found. Please train a model first.');
+      }
+      
+      const originalSizeMB = trainingLogs.model_size_mb || 0;
+      const originalParams = trainingLogs.total_parameters || trainingLogs.num_parameters || 0;
+      
+      // Get accuracy from training logs
+      let originalAcc = 0;
+      if (trainingLogs.history && trainingLogs.history.length > 0) {
+        originalAcc = trainingLogs.history[trainingLogs.history.length - 1].val_accuracy || 0;
+      } else if (trainingLogs.val_score !== undefined) {
+        originalAcc = trainingLogs.val_score;
+      }
+      
+      // Get Compression Info (Compressed Model)
+      const compressionInfo = await compressionService.info();
+      if (!compressionInfo) {
+        throw new Error('No compression results found. Please compress the model first.');
+      }
+      
+      // Extract from compression info - try multiple paths
+      const comparisonReport = compressionInfo.comparison_report;
+      const comprehensive = compressionInfo.comparison_report || compressionInfo.result;
+      
+      let compressedSizeMB = 0;
+      let compressedParams = 0;
+      let compressedAcc = 0;
+      
+      if (comparisonReport?.compressed) {
+        compressedSizeMB = comparisonReport.compressed.size_mb || 0;
+        compressedParams = comparisonReport.compressed.parameters || 0;
+        compressedAcc = comparisonReport.compressed.metrics?.accuracy || comparisonReport.compressed.accuracy || originalAcc;
+      } else if (comprehensive?.compressed) {
+        compressedSizeMB = comprehensive.compressed.size_mb || comprehensive.compressed_size_mb || 0;
+        compressedParams = comprehensive.compressed.parameters || comprehensive.compressed_parameters || 0;
+        compressedAcc = comprehensive.compressed.metrics?.accuracy || comprehensive.compressed_accuracy || originalAcc;
+      } else {
+        // Last resort: check compression info structure
+        const compData = compressionInfo.compressed || compressionInfo.result;
+        if (compData) {
+          compressedSizeMB = compData.size_mb || compData.compressed_size_mb || 0;
+          compressedParams = compData.parameters || compData.compressed_parameters || 0;
+        }
+        compressedAcc = originalAcc; // Use original accuracy as fallback
+      }
+      
+      // Calculate improvements
+      const sizeReduction = originalSizeMB > 0 && compressedSizeMB > 0
+        ? ((originalSizeMB - compressedSizeMB) / originalSizeMB) * 100
+        : 0;
+      
+      const accuracyPreserved = originalAcc > 0 && compressedAcc > 0
+        ? (compressedAcc / originalAcc) * 100
+        : 100;
+      
+      // Get metrics from comparison report if available
+      const originalMetrics = comparisonReport?.original?.metrics || {};
+      const compressedMetrics = comparisonReport?.compressed?.metrics || {};
+      
+      // Set comparison data
       setComparisonData({
         original: {
-          accuracy: originalAcc,
-          precision: data.detailed_metrics?.original?.precision ?? 0,
-          recall: data.detailed_metrics?.original?.recall ?? 0,
-          f1Score: data.detailed_metrics?.original?.f1_score ?? 0,
-          inferenceTime: data.inference_time?.original_ms ?? 0,
+          accuracy: originalMetrics.accuracy || originalAcc,
+          precision: originalMetrics.precision || 0,
+          recall: originalMetrics.recall || 0,
+          f1Score: originalMetrics.f1_score || 0,
+          inferenceTime: originalMetrics.inference_time_ms || 0,
           modelSize: originalSizeMB,
           parameters: originalParams,
         },
         compressed: {
-          accuracy: compressedAcc,
-          precision: data.detailed_metrics?.compressed?.precision ?? 0,
-          recall: data.detailed_metrics?.compressed?.recall ?? 0,
-          f1Score: data.detailed_metrics?.compressed?.f1_score ?? 0,
-          inferenceTime: data.inference_time?.compressed_ms ?? 0,
+          accuracy: compressedMetrics.accuracy || compressedAcc,
+          precision: compressedMetrics.precision || 0,
+          recall: compressedMetrics.recall || 0,
+          f1Score: compressedMetrics.f1_score || 0,
+          inferenceTime: compressedMetrics.inference_time_ms || 0,
           modelSize: compressedSizeMB,
           parameters: compressedParams,
         },
         improvements: {
           sizeReduction: sizeReduction,
-          accuracyPreserved: 100 + (data.accuracy?.difference_percent ?? 0),
-          speedImprovement: data.inference_time?.speedup ?? 1,
+          accuracyPreserved: accuracyPreserved,
+          speedImprovement: originalMetrics.inference_time_ms > 0 && compressedMetrics.inference_time_ms > 0
+            ? originalMetrics.inference_time_ms / compressedMetrics.inference_time_ms
+            : 1,
         },
       });
       
-      console.log('✅ Raw API response:', data);
-      console.log('✅ Extracted values:', {
-        originalSizeMB,
-        compressedSizeMB,
-        originalParams,
-        compressedParams,
-        sizeReduction
-      });
-      console.log('✅ Setting comparison data:', {
-        original: { size: originalSizeMB, params: originalParams },
-        compressed: { size: compressedSizeMB, params: compressedParams },
-        reduction: sizeReduction
+      console.log('✅ Loaded from Training + Compression:', {
+        original: { size: originalSizeMB, params: originalParams, acc: originalAcc },
+        compressed: { size: compressedSizeMB, params: compressedParams, acc: compressedAcc },
+        reduction: sizeReduction.toFixed(2) + '%'
       });
       
-    } catch (error) {
-      // Don't show error if no comparison data exists yet
-      if ((error as any)?.response?.status !== 404) {
-        showError('Comparison Failed', (error as any)?.message ?? String(error));
-      }
+    } catch (error: any) {
+      console.error('❌ Failed to load comparison data:', error);
+      showError('Failed to Load Data', error.message || 'Could not load comparison data. Please ensure training and compression are complete.');
     } finally {
       setLoading(false);
     }

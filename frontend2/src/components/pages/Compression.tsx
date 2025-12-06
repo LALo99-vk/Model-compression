@@ -9,7 +9,8 @@ import {
   Loader,
   GitBranch,
   Layers,
-  BarChart
+  BarChart,
+  Download
 } from 'lucide-react';
 import { compressionService } from '../../api/services/compressionService';
 import { trainingService } from '../../api/services/trainingService';
@@ -410,6 +411,54 @@ const Compression = () => {
         </div>
       </div>
 
+      {/* Download Original Model Button - Show if model is available */}
+      {modelInfo && !isCompressing && (
+        <div className="max-w-4xl mx-auto">
+          <button
+            onClick={async () => {
+              try {
+                const modelType = modelInfo.model_type || 'unknown';
+                let fileExtension = '.pkl'; // Default for Decision Trees
+                
+                if (modelType === 'rnn' || modelType === 'cnn' || modelType === 'lstm' || modelType === 'gru') {
+                  fileExtension = '.pt'; // PyTorch models
+                }
+                
+                console.log(`📥 Downloading ${modelType} model as: original_model${fileExtension}`);
+                
+                const response = await fetch('http://localhost:8000/api/model/download/original');
+                
+                if (!response.ok) {
+                  throw new Error(`Download failed: ${response.statusText}`);
+                }
+                
+                const blob = await response.blob();
+                const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
+                console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
+                
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `original_model${fileExtension}`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+                showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
+              } catch (error: any) {
+                console.error('Download failed:', error);
+                showError('Download Failed', 'Could not download original model');
+              }
+            }}
+            className="w-full px-8 py-3 bg-gradient-to-r from-[#00F3FF] to-[#0088FF] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+          >
+            <Download className="w-5 h-5" />
+            Download Original Model
+          </button>
+        </div>
+      )}
+
       {/* Start Compression Button - Only show if not compressing and no result yet */}
       {!isCompressing && !compressionResult && (
         <div className="max-w-4xl mx-auto">
@@ -499,17 +548,116 @@ const Compression = () => {
           )}
 
           {compressionResult.success && (
-            <button
-              onClick={() => {
-                const event = new CustomEvent('navigate-to', { detail: 'results' });
-                window.dispatchEvent(event);
-              }}
-              className="w-full px-8 py-4 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white text-lg shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-            >
-              <CheckCircle className="w-6 h-6" />
-              View Results
-              <ArrowRight className="w-6 h-6" />
-            </button>
+            <div className="flex flex-col gap-3">
+              {/* Download Buttons */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      const modelType = modelInfo?.model_type || 'unknown';
+                      let fileExtension = '.pkl';
+                      
+                      if (modelType === 'rnn' || modelType === 'cnn' || modelType === 'lstm' || modelType === 'gru') {
+                        fileExtension = '.pt';
+                      }
+                      
+                      console.log(`📥 Downloading original model as: original_model${fileExtension}`);
+                      
+                      const response = await fetch('http://localhost:8000/api/model/download/original');
+                      
+                      if (!response.ok) {
+                        throw new Error(`Download failed: ${response.statusText}`);
+                      }
+                      
+                      const blob = await response.blob();
+                      const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
+                      console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
+                      
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = `original_model${fileExtension}`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                      
+                      showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
+                    } catch (error: any) {
+                      console.error('Download failed:', error);
+                      showError('Download Failed', 'Could not download original model');
+                    }
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#0088FF] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <Download className="w-5 h-5" />
+                  Download Original
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      // Detect model type for correct file extension
+                      const modelType = modelInfo?.model_type || 'unknown';
+                      let fileExtension = '.pkl'; // Default for Decision Trees
+                      
+                      if (modelType === 'rnn' || modelType === 'cnn' || modelType === 'lstm' || modelType === 'gru') {
+                        fileExtension = '.pt'; // PyTorch models
+                      }
+                      
+                      console.log(`📥 Downloading compressed ${modelType} model as: compressed_model${fileExtension}`);
+                      
+                      const response = await fetch('http://localhost:8000/api/model/download/compressed');
+                      
+                      if (!response.ok) {
+                        throw new Error(`Download failed: ${response.statusText}`);
+                      }
+                      
+                      const blob = await response.blob();
+                      const sizeMB = (blob.size / (1024 * 1024)).toFixed(4);
+                      console.log(`✅ Downloaded ${blob.size.toLocaleString()} bytes (${sizeMB} MB)`);
+                      
+                      // Get filename from Content-Disposition header (backend returns correct extension)
+                      const disposition = response.headers.get('content-disposition');
+                      let filename = `compressed_model${fileExtension}`; // Fallback based on model type
+                      if (disposition && disposition.includes('filename=')) {
+                        filename = disposition.split('filename=')[1].replace(/"/g, '');
+                      }
+                      
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(url);
+                      
+                      showSuccess('Download Complete', `Compressed model downloaded (${sizeMB} MB)`);
+                    } catch (error: any) {
+                      console.error('Download failed:', error);
+                      showError('Download Failed', 'Could not download compressed model');
+                    }
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-[#00FFA0] to-[#00D67F] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,255,160,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <Download className="w-5 h-5" />
+                  Download Compressed
+                </button>
+              </div>
+              
+              {/* View Results Button */}
+              <button
+                onClick={() => {
+                  const event = new CustomEvent('navigate-to', { detail: 'results' });
+                  window.dispatchEvent(event);
+                }}
+                className="w-full px-8 py-4 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white text-lg shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-6 h-6" />
+                View Results
+                <ArrowRight className="w-6 h-6" />
+              </button>
+            </div>
           )}
         </div>
       )}

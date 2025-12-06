@@ -1448,6 +1448,21 @@ class CompressionService:
                     "method": best_model[0],
                     **best_data
                 }
+                
+                # Copy best model to standard location for download
+                best_model_path = best_data.get("model_path")
+                if best_model_path and os.path.exists(best_model_path):
+                    # Determine file extension
+                    _, ext = os.path.splitext(best_model_path)
+                    standard_path = f"models/compressed_model{ext}"
+                    
+                    # Copy file to standard location
+                    import shutil
+                    shutil.copy2(best_model_path, standard_path)
+                    logger.info(f"✅ Copied best model to standard location: {standard_path}")
+                    
+                    # Update best_model with compressed_path for evaluation
+                    results["best_model"]["compressed_path"] = standard_path
         
         # Generate summary
         best_size_red = 0.0
@@ -1897,7 +1912,7 @@ class CompressionService:
             try:
                 logger.info("📊 Evaluating compressed model...")
                 comp_result = self.evaluation_service.evaluate(
-                    model_path=best_model["compressed_path"],
+                    model_path=best_model.get("compressed_path") or best_model.get("model_path"),
                     dataset_path=dataset_path,
                     model_type=original_info["model_type"]
                 )
@@ -2230,11 +2245,16 @@ class CompressionService:
             }
         
         # All PHASE 6 rules passed - generate report in exact format with REAL metrics
+        # Get model paths for download endpoints
+        original_model_path = original_info.get("model_path", "")
+        compressed_model_path = best_model.get("compressed_path") or best_model.get("model_path", "")
+        
         comparison = {
             "original": {
                 "size_mb": round(original_size_mb, 2),
                 "parameters": int(original_params),
                 "architecture": original_arch,
+                "model_path": original_model_path,  # For download endpoint
                 "metrics": {
                     "accuracy": round(original_metrics.get("accuracy", 0), 4),
                     "precision": round(original_metrics.get("precision", 0), 4),
@@ -2247,6 +2267,7 @@ class CompressionService:
                 "size_mb": round(compressed_size_mb, 2),
                 "parameters": int(compressed_params),
                 "architecture": f"{original_arch} (Compressed)",
+                "model_path": compressed_model_path,  # For download endpoint
                 "metrics": {
                     "accuracy": round(compressed_metrics.get("accuracy", 0), 4),
                     "precision": round(compressed_metrics.get("precision", 0), 4),
