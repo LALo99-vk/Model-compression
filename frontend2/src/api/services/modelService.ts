@@ -13,6 +13,32 @@ export interface ModelSelectionRequest {
   config?: Record<string, any> | null;
 }
 
+export interface TrainedModelInfo {
+  accuracy: number;
+  size_kb: number;
+  parameters: number;
+  path: string;
+  compression_ratio?: number;
+  size_reduction?: number;
+  method?: string;
+}
+
+export interface TrainingSession {
+  id: string;
+  model_type: 'decision_tree' | 'cnn' | 'rnn' | string;
+  dataset_name: string;
+  dataset_path: string;
+  created_at: string | null;
+  training_time: number;
+  original: TrainedModelInfo | null;
+  compressed: TrainedModelInfo | null;
+}
+
+export interface TrainedModelsResponse {
+  sessions: TrainingSession[];
+  count: number;
+}
+
 export const modelService = {
   async getAvailable(): Promise<AvailableModelsResponse> {
     const res = await api.get('/api/model/available');
@@ -27,5 +53,10 @@ export const modelService = {
   async current(): Promise<any> {
     const res = await api.get('/api/model/current');
     return res.data as any;
+  },
+
+  async getTrainedModels(): Promise<TrainedModelsResponse> {
+    const res = await api.get('/api/model/trained');
+    return res.data as TrainedModelsResponse;
   },
 };

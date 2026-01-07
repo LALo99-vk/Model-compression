@@ -188,6 +188,161 @@ async def download_original_model():
     )
 
 
+@router.get("/trained")
+async def get_trained_models():
+    """
+    Get all trained models with their details
+    Returns model type, dataset used, original and compressed info
+    Reads from training history to show multiple sessions
+    """
+    result = {
+        "sessions": [],
+        "count": 0
+    }
+    
+    history_path = "results/training_history.json"
+    compression_path = "results/compression_comprehensive.json"
+    compression_report_path = "results/compression_comparison_report.json"
+    
+    # Try to load from training history first
+    if os.path.exists(history_path):
+        try:
+            with open(history_path, "r") as f:
+                history = json.load(f)
+            
+            # Load compression info for the latest session
+            compressed_info = None
+            if os.path.exists(compression_path):
+                try:
+                    with open(compression_path, "r") as f:
+                        comp_data = json.load(f)
+                        if comp_data.get("best_model"):
+                            best = comp_data["best_model"]
+                            compressed_info = {
+                                "accuracy": (best.get("accuracy", 0) * 100) if best.get("accuracy", 0) <= 1 else best.get("accuracy", 0),
+                                "size_kb": best.get("size_kb", best.get("compressed_size_kb", 0)),
+                                "parameters": best.get("parameters", best.get("compressed_parameters", 0)),
+                                "compression_ratio": best.get("compression_ratio", 1),
+                                "size_reduction": best.get("size_reduction_percent", 0),
+                                "method": best.get("method", "Best"),
+                                "path": best.get("path", "models/compressed_model.pt")
+                            }
+                except Exception as e:
+                    logger.warning(f"Could not load compression info: {e}")
+            
+            # Fallback to comparison report
+            if not compressed_info and os.path.exists(compression_report_path):
+                try:
+                    with open(compression_report_path, "r") as f:
+                        report = json.load(f)
+                        if report.get("compressed"):
+                            comp = report["compressed"]
+                            compressed_info = {
+                                "accuracy": (comp.get("metrics", {}).get("accuracy", 0) * 100) if comp.get("metrics", {}).get("accuracy", 0) <= 1 else comp.get("metrics", {}).get("accuracy", 0),
+                                "size_kb": comp.get("size_kb", comp.get("size_mb", 0) * 1024),
+                                "parameters": comp.get("parameters", 0),
+                                "compression_ratio": report.get("compression_ratio", 1),
+                                "size_reduction": report.get("reduction_percent", 0),
+                                "method": comp.get("method", "Compressed"),
+                                "path": comp.get("model_path", "models/compressed_model.pt")
+                            }
+                except Exception as e:
+                    logger.warning(f"Could not load comparison report: {e}")
+            
+            # Process each session from history
+            for i, session in enumerate(history):
+                # Convert stored format to API format
+                original = session.get("original", {})
+                accuracy = original.get("accuracy", 0)
+                if accuracy <= 1:
+                    accuracy = accuracy * 100
+                
+                processed_session = {
+                    "id": session.get("id", f"session_{i}"),
+                    "model_type": session.get("model_type", "unknown"),
+                    "dataset_name": session.get("dataset_name", "Unknown"),
+                    "dataset_path": session.get("dataset_path", ""),
+                    "created_at": session.get("created_at"),
+                    "training_time": session.get("training_time", 0),
+                    "original": {
+                        "accuracy": accuracy,
+                        "size_kb": original.get("size_kb", original.get("size_mb", 0) * 1024),
+                        "parameters": original.get("parameters", 0),
+                        "path": original.get("path", "")
+                    },
+                    "compressed": None
+                }
+                
+                # Only add compression info to the first (latest) session
+                # since compression overwrites the previous compressed model
+                if i == 0 and compressed_info:
+                    # Calculate size reduction if not provided
+                    if compressed_info.get("size_reduction", 0) == 0:
+                        if processed_session["original"]["size_kb"] > 0 and compressed_info["size_kb"] > 0:
+                            compressed_info["size_reduction"] = (
+                                (processed_session["original"]["size_kb"] - compressed_info["size_kb"]) 
+                                / processed_session["original"]["size_kb"] * 100
+                            )
+                    processed_session["compressed"] = compressed_info
+                
+                result["sessions"].append(processed_session)
+            
+            result["count"] = len(result["sessions"])
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error loading training history: {e}")
+    
+    # Fallback to loading from current training logs (for backward compatibility)
+    logs_path = "results/training_logs.json"
+    config_path = "models/selected_model_config.json"
+    
+    if not os.path.exists(logs_path):
+        return result
+    
+    try:
+        with open(logs_path, "r") as f:
+            training_logs = json.load(f)
+        
+        dataset_path = ""
+        dataset_name = "Unknown"
+        
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                dataset_path = config.get("dataset_path", "")
+                dataset_name = dataset_path.split("/")[-1] if dataset_path else "Unknown"
+        
+        original_size_kb = training_logs.get("model_size_kb", training_logs.get("model_size_mb", 0) * 1024)
+        original_accuracy = training_logs.get("val_score", training_logs.get("train_score", 0))
+        if training_logs.get("history") and len(training_logs["history"]) > 0:
+            original_accuracy = training_logs["history"][-1].get("val_accuracy", original_accuracy)
+        
+        session = {
+            "id": "current",
+            "model_type": training_logs.get("model_type", "unknown"),
+            "dataset_name": dataset_name,
+            "dataset_path": dataset_path,
+            "created_at": None,
+            "training_time": training_logs.get("training_time", 0),
+            "original": {
+                "accuracy": original_accuracy * 100 if original_accuracy <= 1 else original_accuracy,
+                "size_kb": original_size_kb,
+                "parameters": training_logs.get("total_parameters", training_logs.get("num_parameters", 0)),
+                "path": training_logs.get("model_path", "")
+            },
+            "compressed": None
+        }
+        
+        result["sessions"].append(session)
+        result["count"] = 1
+        
+    except Exception as e:
+        logger.error(f"Error loading trained models: {e}")
+    
+    return result
+
+
 @router.get("/download/compressed")
 async def download_compressed_model():
     """

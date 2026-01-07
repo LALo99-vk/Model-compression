@@ -147,3 +147,181 @@ async def clear_all_datasets():
         os.makedirs(UPLOAD_DIR)
 
     return {"message": "All datasets cleared"}
+
+
+@router.get("/preview/{filename:path}")
+async def preview_dataset(filename: str, rows: int = 10):
+    """
+    Get preview and statistics for a dataset
+    - CSV: Returns first N rows, column names, row count, data types
+    - TXT: Returns first N lines, character count, line count
+    - Image folder: Returns class names, image counts per class, sample paths
+    """
+    import pandas as pd
+    from PIL import Image
+    
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    result = {
+        "filename": filename,
+        "path": file_path,
+        "file_type": "unknown",
+        "size_bytes": 0,
+    }
+    
+    # Handle folder (image dataset)
+    if os.path.isdir(file_path):
+        result["file_type"] = "image_folder"
+        
+        # Get class folders and image counts
+        classes = {}
+        sample_images = []
+        total_images = 0
+        total_size = 0
+        
+        for item in os.listdir(file_path):
+            item_path = os.path.join(file_path, item)
+            if os.path.isdir(item_path):
+                # This is a class folder
+                images = [f for f in os.listdir(item_path) 
+                         if Path(f).suffix.lower() in {'.jpg', '.jpeg', '.png', '.bmp'}]
+                classes[item] = len(images)
+                total_images += len(images)
+                
+                # Get sample image from this class
+                if images and len(sample_images) < 5:
+                    sample_path = os.path.join(item_path, images[0])
+                    try:
+                        with Image.open(sample_path) as img:
+                            sample_images.append({
+                                "class": item,
+                                "filename": images[0],
+                                "size": f"{img.width}x{img.height}",
+                                "mode": img.mode
+                            })
+                    except:
+                        pass
+                
+                # Calculate folder size
+                for img_file in images:
+                    img_path = os.path.join(item_path, img_file)
+                    total_size += os.path.getsize(img_path)
+            elif Path(item).suffix.lower() in {'.jpg', '.jpeg', '.png', '.bmp'}:
+                # Images directly in the folder (no class subfolders)
+                classes["unlabeled"] = classes.get("unlabeled", 0) + 1
+                total_images += 1
+                total_size += os.path.getsize(item_path)
+                
+                if len(sample_images) < 5:
+                    try:
+                        with Image.open(item_path) as img:
+                            sample_images.append({
+                                "class": "unlabeled",
+                                "filename": item,
+                                "size": f"{img.width}x{img.height}",
+                                "mode": img.mode
+                            })
+                    except:
+                        pass
+        
+        result["size_bytes"] = total_size
+        result["classes"] = classes
+        result["num_classes"] = len(classes)
+        result["total_images"] = total_images
+        result["sample_images"] = sample_images
+        
+        return result
+    
+    # Handle files
+    file_ext = Path(filename).suffix.lower()
+    result["size_bytes"] = os.path.getsize(file_path)
+    
+    # CSV file
+    if file_ext == ".csv":
+        result["file_type"] = "csv"
+        try:
+            # Read CSV with pandas
+            df = pd.read_csv(file_path, nrows=rows + 1)  # +1 for header detection
+            full_df = pd.read_csv(file_path)
+            
+            result["columns"] = list(df.columns)
+            result["num_columns"] = len(df.columns)
+            result["num_rows"] = len(full_df)
+            result["preview_rows"] = rows
+            
+            # Get data types
+            result["dtypes"] = {col: str(dtype) for col, dtype in full_df.dtypes.items()}
+            
+            # Get missing values count
+            result["missing_values"] = {col: int(full_df[col].isna().sum()) for col in full_df.columns}
+            result["total_missing"] = int(full_df.isna().sum().sum())
+            
+            # Get unique values for target (last column)
+            target_col = df.columns[-1]
+            result["target_column"] = target_col
+            result["unique_targets"] = int(full_df[target_col].nunique())
+            result["target_values"] = full_df[target_col].value_counts().head(10).to_dict()
+            
+            # Preview data as list of lists (header + rows)
+            preview_data = [list(df.columns)]
+            for _, row in df.head(rows).iterrows():
+                preview_data.append([str(v) if pd.notna(v) else "" for v in row.values])
+            
+            result["preview"] = preview_data
+            
+        except Exception as e:
+            result["error"] = str(e)
+            result["preview"] = []
+        
+        return result
+    
+    # Text file
+    if file_ext == ".txt":
+        result["file_type"] = "text"
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            lines = content.split('\n')
+            result["num_lines"] = len(lines)
+            result["num_characters"] = len(content)
+            result["num_words"] = len(content.split())
+            
+            # Get unique characters (vocabulary for char-level models)
+            unique_chars = sorted(set(content))
+            result["vocab_size"] = len(unique_chars)
+            result["sample_vocab"] = unique_chars[:50]  # First 50 chars
+            
+            # Preview first N lines
+            result["preview"] = [[line] for line in lines[:rows]]
+            
+            # Check if it's tab-separated (classification format)
+            if '\t' in lines[0] if lines else '':
+                result["format"] = "tab_separated"
+                # Try to parse as label\ttext format
+                try:
+                    labels = set()
+                    for line in lines[:100]:
+                        if '\t' in line:
+                            label = line.split('\t')[0]
+                            labels.add(label)
+                    result["detected_labels"] = list(labels)[:20]
+                except:
+                    pass
+            else:
+                result["format"] = "plain_text"
+            
+        except Exception as e:
+            result["error"] = str(e)
+            result["preview"] = []
+        
+        return result
+    
+    # Other file types - just basic info
+    result["file_type"] = file_ext.replace(".", "")
+    result["preview"] = []
+    
+    return result

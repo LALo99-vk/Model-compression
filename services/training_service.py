@@ -48,6 +48,64 @@ class TrainingService:
     def __init__(self):
         self.stop_flag = False
         self.model_builder = ModelBuilder()
+    
+    def _save_to_training_history(self, model_config: dict, dataset_path: str, logs: dict):
+        """
+        Save training session to history file.
+        Keeps last 10 training sessions.
+        """
+        import uuid
+        from datetime import datetime
+        
+        history_path = "results/training_history.json"
+        
+        # Load existing history
+        history = []
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, "r") as f:
+                    history = json.load(f)
+            except:
+                history = []
+        
+        # Create session entry
+        session = {
+            "id": str(uuid.uuid4())[:8],
+            "model_type": model_config.get("model_type", "unknown"),
+            "dataset_path": dataset_path,
+            "dataset_name": os.path.basename(dataset_path) if dataset_path else "Unknown",
+            "created_at": datetime.now().isoformat(),
+            "training_time": logs.get("training_time", 0),
+            "epochs_trained": logs.get("epochs_trained", logs.get("epochs", 0)),
+            "original": {
+                "accuracy": logs.get("val_score", logs.get("train_score", 0)),
+                "size_kb": logs.get("model_size_kb", 0),
+                "size_mb": logs.get("model_size_mb", 0),
+                "parameters": logs.get("total_parameters", logs.get("num_parameters", 0)),
+                "path": logs.get("model_path", "")
+            },
+            "compressed": None,  # Will be updated when compression happens
+            "task_type": logs.get("task_type", model_config.get("task_type", "classification"))
+        }
+        
+        # Get accuracy from history if available
+        if logs.get("history") and len(logs["history"]) > 0:
+            last_epoch = logs["history"][-1]
+            if last_epoch.get("val_accuracy", 0) > 0:
+                session["original"]["accuracy"] = last_epoch["val_accuracy"]
+        
+        # Add to history (at the beginning)
+        history.insert(0, session)
+        
+        # Keep only last 10 sessions
+        history = history[:10]
+        
+        # Save history
+        os.makedirs("results", exist_ok=True)
+        with open(history_path, "w") as f:
+            json.dump(history, f, indent=2, default=str)
+        
+        logger.info(f"✅ Training session saved to history: {session['id']}")
         self.data_loader = DataLoaderUtil()
         self.validator = DataValidator()
         self.dataset_validator = DatasetValidationService()
@@ -704,6 +762,9 @@ class TrainingService:
         }
 
         self._atomic_write_json("results/training_logs.json", logs)
+        
+        # Save to training history
+        self._save_to_training_history(model_config, dataset_path, logs)
 
     def _train_pytorch_model(self, model_config, X_train, X_val, y_train, y_val, epochs, batch_size, dataset_path):
         """
@@ -1138,6 +1199,9 @@ class TrainingService:
         }
 
         self._atomic_write_json("results/training_logs.json", logs)
+        
+        # Save to training history
+        self._save_to_training_history(model_config, dataset_path, logs)
         
         logger.info(f"✅ Training completed successfully in {time.time() - start_time:.2f}s")
 

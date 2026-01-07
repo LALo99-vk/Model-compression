@@ -50,7 +50,7 @@ const Results = () => {
   const [showCelebration, setShowCelebration] = useState(false);
   const [viewMode, setViewMode] = useState<'comparison' | 'original' | 'compressed'>('comparison');
 
-  const { showError, showInfo } = useToast();
+  const { showError, showInfo, showSuccess } = useToast();
   const selectedModelConfig = useAppStore((s) => s.selectedModel);
   
   useEffect(() => {
@@ -161,6 +161,81 @@ const Results = () => {
     } catch (error) {
       console.error('Download failed:', error);
       showError('Download Failed', 'Could not download compressed model');
+    }
+  };
+
+  const downloadComparisonReport = async () => {
+    try {
+      if (!comparisonData) {
+        showError('No Data', 'No comparison data available to download');
+        return;
+      }
+
+      console.log('📥 Generating comparison report...');
+
+      // Create a comprehensive report
+      const report = {
+        title: 'Model Compression Comparison Report',
+        generated_at: new Date().toISOString(),
+        task_type: comparisonData.taskType || 'classification',
+        summary: {
+          size_reduction: `${comparisonData.improvements.sizeReduction.toFixed(2)}%`,
+          accuracy_preserved: `${comparisonData.improvements.accuracyPreserved.toFixed(2)}%`,
+          speed_improvement: `${comparisonData.improvements.speedImprovement.toFixed(2)}x`,
+        },
+        original_model: {
+          accuracy: comparisonData.original.accuracy,
+          precision: comparisonData.original.precision,
+          recall: comparisonData.original.recall,
+          f1_score: comparisonData.original.f1Score,
+          inference_time_ms: comparisonData.original.inferenceTime,
+          model_size_mb: comparisonData.original.modelSize,
+          parameters: comparisonData.original.parameters,
+          ...(comparisonData.taskType === 'regression' && {
+            mse: comparisonData.original.mse,
+            r2_score: comparisonData.original.r2Score,
+          }),
+        },
+        compressed_model: {
+          accuracy: comparisonData.compressed.accuracy,
+          precision: comparisonData.compressed.precision,
+          recall: comparisonData.compressed.recall,
+          f1_score: comparisonData.compressed.f1Score,
+          inference_time_ms: comparisonData.compressed.inferenceTime,
+          model_size_mb: comparisonData.compressed.modelSize,
+          parameters: comparisonData.compressed.parameters,
+          ...(comparisonData.taskType === 'regression' && {
+            mse: comparisonData.compressed.mse,
+            r2_score: comparisonData.compressed.r2Score,
+          }),
+        },
+        improvements: {
+          size_reduction_percent: comparisonData.improvements.sizeReduction,
+          size_saved_mb: comparisonData.original.modelSize - comparisonData.compressed.modelSize,
+          parameter_reduction: comparisonData.original.parameters - comparisonData.compressed.parameters,
+          parameter_reduction_percent: comparisonData.original.parameters > 0 
+            ? ((comparisonData.original.parameters - comparisonData.compressed.parameters) / comparisonData.original.parameters * 100)
+            : 0,
+        },
+      };
+
+      // Convert to JSON and download
+      const jsonString = JSON.stringify(report, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `compression_report_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      console.log('✅ Comparison report downloaded');
+      showSuccess('Download Complete', 'Comparison report downloaded');
+    } catch (error) {
+      console.error('Download failed:', error);
+      showError('Download Failed', 'Could not generate comparison report');
     }
   };
 
@@ -434,38 +509,38 @@ const Results = () => {
           isImprovement: false // Lower is better
         },
       ] : [
-        { 
-          name: 'Accuracy', 
-          icon: Target,
-          original: comparisonData.original.accuracy, 
-          compressed: comparisonData.compressed.accuracy,
-          format: (val: number) => `${(val * 100).toFixed(2)}%`,
-          isImprovement: true
-        },
-        { 
-          name: 'Precision', 
-          icon: Target,
-          original: comparisonData.original.precision, 
-          compressed: comparisonData.compressed.precision,
-          format: (val: number) => val.toFixed(4),
-          isImprovement: true
-        },
-        { 
-          name: 'Recall', 
-          icon: Activity,
-          original: comparisonData.original.recall, 
-          compressed: comparisonData.compressed.recall,
-          format: (val: number) => val.toFixed(4),
-          isImprovement: true
-        },
-        { 
-          name: 'F1-Score', 
-          icon: Activity,
-          original: comparisonData.original.f1Score, 
-          compressed: comparisonData.compressed.f1Score,
-          format: (val: number) => val.toFixed(4),
-          isImprovement: true
-        },
+      { 
+        name: 'Accuracy', 
+        icon: Target,
+        original: comparisonData.original.accuracy, 
+        compressed: comparisonData.compressed.accuracy,
+        format: (val: number) => `${(val * 100).toFixed(2)}%`,
+        isImprovement: true
+      },
+      { 
+        name: 'Precision', 
+        icon: Target,
+        original: comparisonData.original.precision, 
+        compressed: comparisonData.compressed.precision,
+        format: (val: number) => val.toFixed(4),
+        isImprovement: true
+      },
+      { 
+        name: 'Recall', 
+        icon: Activity,
+        original: comparisonData.original.recall, 
+        compressed: comparisonData.compressed.recall,
+        format: (val: number) => val.toFixed(4),
+        isImprovement: true
+      },
+      { 
+        name: 'F1-Score', 
+        icon: Activity,
+        original: comparisonData.original.f1Score, 
+        compressed: comparisonData.compressed.f1Score,
+        format: (val: number) => val.toFixed(4),
+        isImprovement: true
+      },
       ]),
       { 
         name: 'Inference Time (ms)', 
@@ -961,7 +1036,10 @@ const Results = () => {
           Download Compressed Model
         </button>
         
-        <button className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#00F3FF] hover:border-[#00F3FF] hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2">
+        <button 
+          onClick={downloadComparisonReport}
+          className="px-6 py-3 bg-[#121628] border border-[#122033] rounded-lg font-semibold text-[#00F3FF] hover:border-[#00F3FF] hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
+        >
           <Download className="w-5 h-5" />
           Download Comparison Report
         </button>
