@@ -108,7 +108,7 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
                     "can_autofix": validation_result.get('can_auto_fix', False)
                 })
             )
-        
+    
         # Save dataset path for compression use
         model_config["dataset_path"] = request.dataset_path
         os.makedirs("models", exist_ok=True)

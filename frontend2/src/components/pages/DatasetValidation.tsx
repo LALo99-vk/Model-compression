@@ -36,7 +36,7 @@ const DatasetValidation = () => {
     // Use the dataset that was selected during upload (from global state)
     if (selectedDatasetPath && !selectedDataset) {
       setSelectedDatasetLocal(selectedDatasetPath);
-      showInfo('Dataset Loaded', `Using selected dataset: ${selectedDatasetName || 'dataset'}`);
+      // REMOVED: Redundant toast - UI shows selected dataset
     } else if (datasets.length > 0 && !selectedDataset) {
       // Fallback to first dataset if no dataset was selected
       setSelectedDatasetLocal(datasets[0].path);
@@ -48,7 +48,7 @@ const DatasetValidation = () => {
     if (selectedDataset && selectedModel && !validationResult && !isValidating) {
       // Auto-trigger validation after a short delay
       const timer = setTimeout(() => {
-        showInfo('Auto-Validating', `Validating ${selectedDatasetName || 'dataset'} for ${selectedModel.model_type.toUpperCase()} model...`);
+        // REMOVED: "Auto-Validating" toast - UI shows validation status
         handleValidate();
       }, 1000);
       
@@ -58,7 +58,7 @@ const DatasetValidation = () => {
 
   const handleValidate = async () => {
     if (!selectedDataset) {
-      showError('No Dataset Selected', 'Please select a dataset first.');
+      // No toast - UI shows dataset selection is required
       return;
     }
 
@@ -74,17 +74,13 @@ const DatasetValidation = () => {
 
       setValidationResult(result);
 
+      // Only show toast for success - errors shown in UI
       if (result.status === 'valid') {
-        showSuccess('Validation Passed', result.message);
-        showInfo('Ready to Train', 'Click "Start Training" below to begin training your model.');
-        // REMOVED: Auto-navigation to training - user will click "Start Training" button manually
-      } else if (result.status === 'invalid') {
-        showError('Validation Failed', result.message);
-      } else {
-        showError('Validation Error', result.message);
+        showSuccess('Valid', 'Dataset ready for training');
       }
+      // REMOVED: Error toasts - validation result shown in UI
     } catch (error: any) {
-      showError('Validation Error', error.response?.data?.detail || error.message || 'Failed to validate dataset');
+      // Error shown in UI via validationResult
       setValidationResult({
         status: 'error',
         message: error.response?.data?.detail || error.message || 'Failed to validate dataset',
@@ -98,7 +94,6 @@ const DatasetValidation = () => {
 
   const handleAutoFix = async () => {
     if (!selectedDataset) {
-      showError('No Dataset Selected', 'Please select a dataset first.');
       return;
     }
 
@@ -115,12 +110,9 @@ const DatasetValidation = () => {
       setFixResult(result);
 
       if (result.status === 'fixed') {
-        showSuccess('Dataset Fixed', result.message);
-        // Re-validate after fixing to show "Start Training" button
-        setTimeout(() => {
-          handleValidate();
-        }, 1000);
-        // Also update validation result to show fixed status
+        showSuccess('Fixed', 'Dataset ready');
+        // Re-validate after fixing
+        setTimeout(() => handleValidate(), 1000);
         setValidationResult({
           status: 'valid',
           message: 'Dataset successfully fixed and validated. Ready for training.',
@@ -129,8 +121,7 @@ const DatasetValidation = () => {
           can_autofix: false
         });
       } else if (result.status === 'invalid_after_fix') {
-        showError('Issues Remain', result.message);
-        // Update validation result to show remaining issues
+        // Result shown in UI
         setValidationResult({
           status: 'invalid',
           message: result.message,
@@ -138,18 +129,17 @@ const DatasetValidation = () => {
           warnings: result.warnings || [],
           can_autofix: false
         });
-      } else {
-        showError('Fix Failed', result.message);
       }
+      // REMOVED: Redundant error toasts - UI shows fix result
     } catch (error: any) {
-      showError('Auto-Fix Error', error.response?.data?.detail || error.message || 'Failed to fix dataset');
+      // Error shown in UI
     } finally {
       setIsFixing(false);
     }
   };
 
   const handleFixManually = () => {
-    showInfo('Manual Fix', 'Please download the validation report, fix the issues manually, and re-upload the dataset.');
+    // Info shown in UI - no toast needed
   };
 
   const getStatusIcon = (status: string) => {

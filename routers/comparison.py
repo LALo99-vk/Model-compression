@@ -46,21 +46,21 @@ async def compare_models():
     # Get file sizes - find actual model files
     original_model_path = None
     compressed_model_path = None
-    
+
     # Try different extensions for original model
     for ext in ['.pkl', '.pt', '.h5']:
         candidate_path = f"models/original_model{ext}"
         if os.path.exists(candidate_path):
             original_model_path = candidate_path
             break
-    
+
     # Try different extensions for compressed model
     for ext in ['.pkl', '.pt', '.h5']:
         candidate_path = f"models/compressed_model{ext}"
         if os.path.exists(candidate_path):
             compressed_model_path = candidate_path
             break
-    
+
     # Calculate real file sizes
     original_size = os.path.getsize(original_model_path) if original_model_path and os.path.exists(original_model_path) else 0
     compressed_size = os.path.getsize(compressed_model_path) if compressed_model_path and os.path.exists(compressed_model_path) else 0

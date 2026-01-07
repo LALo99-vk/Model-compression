@@ -26,8 +26,8 @@ const ToastContainer: React.FC = () => {
     // Generate unique ID using timestamp + counter + random
     const id = `${Date.now()}-${++toastCounter}-${Math.random().toString(36).substr(2, 9)}`;
     setToasts(prev => [...prev, { ...toast, id }]);
-    // Auto-remove toast after 5 seconds
-    setTimeout(() => removeToast(id), 5000);
+    // Auto-remove toast after 3 seconds (reduced for less intrusion)
+    setTimeout(() => removeToast(id), 3000);
     return id;
   };
 

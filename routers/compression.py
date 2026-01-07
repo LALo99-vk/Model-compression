@@ -158,8 +158,42 @@ async def get_compression_methods():
 async def get_compression_info():
     """Get information about the last compression and original model info from training"""
     info_path = "results/compression_info.json"
+    comprehensive_path = "results/compression_comprehensive.json"
+    comparison_report_path = "results/compression_comparison_report.json"
     
-    # Try to load compression info if available
+    # PRIORITY 1: Try to load comprehensive compression results (has best_model data)
+    if os.path.exists(comprehensive_path):
+        try:
+            with open(comprehensive_path, "r") as f:
+                comprehensive_data = json.load(f)
+            
+            # Also try to get comparison report for additional data
+            comparison_report = None
+            if os.path.exists(comparison_report_path):
+                with open(comparison_report_path, "r") as f:
+                    comparison_report = json.load(f)
+            
+            # Return comprehensive data with comparison report
+            result = comprehensive_data.copy()
+            if comparison_report:
+                result["comparison_report"] = comparison_report
+            
+            logger.info(f"Returning comprehensive compression data")
+            return result
+        except Exception as e:
+            logger.warning(f"Could not read comprehensive compression: {str(e)}")
+    
+    # PRIORITY 2: Try to load comparison report directly
+    if os.path.exists(comparison_report_path):
+        try:
+            with open(comparison_report_path, "r") as f:
+                comparison_report = json.load(f)
+            logger.info(f"Returning comparison report data")
+            return comparison_report
+        except Exception as e:
+            logger.warning(f"Could not read comparison report: {str(e)}")
+    
+    # PRIORITY 3: Try to load basic compression info
     compression_info = None
     if os.path.exists(info_path):
         with open(info_path, "r") as f:

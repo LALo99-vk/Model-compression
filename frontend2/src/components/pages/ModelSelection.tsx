@@ -24,7 +24,7 @@ const ModelSelection = () => {
   const [showConfig, setShowConfig] = useState(false);
   const [autoSelectedModel, setAutoSelectedModel] = useState<Model | null>(null);
   const [datasetType, setDatasetType] = useState<'tabular' | 'image' | 'text' | null>(null);
-  const { showSuccess, showError, showWarning, showInfo } = useToast();
+  const { showError } = useToast();
   const selectModel = useAppStore((s) => s.selectModel);
   const selectedDatasetName = useAppStore((s) => s.selectedDatasetName);
   const selectedDatasetPath = useAppStore((s) => s.selectedDatasetPath);
@@ -198,11 +198,7 @@ const ModelSelection = () => {
       const validation = validateCompatibility(model);
       
       if (!validation.compatible) {
-        showError('Incompatible Model', validation.reason || 'This model is not compatible with your dataset.');
-        showWarning(
-          'Options',
-          '1. Switch to Auto Mode\n2. Re-upload a compatible dataset'
-        );
+        showError('Incompatible', validation.reason?.slice(0, 40) || 'Model not compatible');
         return;
       }
     }
@@ -220,7 +216,7 @@ const ModelSelection = () => {
       // Final compatibility check
       const validation = validateCompatibility(modelToConfirm);
       if (!validation.compatible) {
-        showError('Incompatible Model', validation.reason || 'This model is not compatible with your dataset.');
+        showError('Incompatible', validation.reason?.slice(0, 40) || 'Model not compatible');
         return;
       }
 
@@ -233,20 +229,15 @@ const ModelSelection = () => {
 
       selectModel(modelConfig);
       
-      showSuccess(
-        'Model Selected', 
-        `${modelToConfirm.name} configured for ${taskType} task`
-      );
-      
       // STEP 2 → STEP 3: Auto-navigate to validation after model selection
-      showInfo('Next Step', 'Validating dataset for selected model...');
+      // No toast - just navigate (UI shows selection)
       setTimeout(() => {
         const event = new CustomEvent('navigate-to', { detail: 'validation' });
         window.dispatchEvent(event);
-      }, 2000);
+      }, 500);  // Reduced delay
       
     } catch (error: any) {
-      showError('Selection Failed', error.message || 'Failed to select model');
+      showError('Error', 'Failed to select model');
     }
   };
 
@@ -270,7 +261,7 @@ const ModelSelection = () => {
           Choose how to select your AI model
         </p>
         {selectedDatasetName && (
-          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+        <div className="mt-2 flex items-center justify-center gap-2 text-sm">
             <span className="px-3 py-1 bg-[#121628] border border-[#00F3FF]/60 rounded-full text-[#E6FBFF] font-medium truncate max-w-md" title={selectedDatasetName}>
               Dataset: {selectedDatasetName}
             </span>
@@ -279,8 +270,8 @@ const ModelSelection = () => {
                 {getDatasetTypeIcon()}
                 Type: {datasetType.charAt(0).toUpperCase() + datasetType.slice(1)}
               </span>
-            )}
-          </div>
+          )}
+        </div>
         )}
         {selectedModelConfig && (
           <div className="mt-2 flex items-center justify-center gap-2 text-sm">
@@ -326,7 +317,7 @@ const ModelSelection = () => {
           </button>
         </div>
       </div>
-
+            
       {/* AUTO MODE Content */}
       {mode === 'auto' && (
         <div className="max-w-4xl mx-auto space-y-6">
@@ -347,15 +338,15 @@ const ModelSelection = () => {
                       <div className="flex items-center gap-4">
                         <div className="p-4 bg-gradient-to-br from-[#00FFA0]/20 to-transparent rounded-xl border border-[#00FFA0]/30">
                           {getModelIcon(autoSelectedModel.icon)}
-                        </div>
-                        <div>
+              </div>
+              <div>
                           <h4 className="text-2xl font-bold text-[#E6FBFF]">{autoSelectedModel.name}</h4>
                           <p className="text-[#9BD8FF] mt-1">{autoSelectedModel.description}</p>
-                        </div>
+                </div>
                       </div>
                       <CheckCircle className="w-12 h-12 text-[#00FFA0]" />
-                    </div>
-                    
+              </div>
+
                     <div className="flex items-center gap-2 text-sm">
                       <Info className="w-4 h-4 text-[#00F3FF]" />
                       <span className="text-[#9BD8FF]">Best for: {autoSelectedModel.bestFor}</span>
@@ -386,7 +377,7 @@ const ModelSelection = () => {
                         >
                           Regression
                         </button>
-                      </div>
+                </div>
                     </div>
 
                     <button
@@ -407,8 +398,8 @@ const ModelSelection = () => {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
+                </div>
+              </div>
 
           {/* Info about Auto Mode */}
           <div className="bg-[#0b1220]/30 border border-[#122033] rounded-lg p-4">
@@ -424,7 +415,7 @@ const ModelSelection = () => {
               </div>
             </div>
           </div>
-        </div>
+      </div>
       )}
 
       {/* MANUAL MODE Content */}
@@ -530,17 +521,17 @@ const ModelSelection = () => {
                     Regression
                   </button>
                 </div>
-              </div>
-
-              <button
-                onClick={confirmSelection}
-                className="w-full px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-              >
-                <CheckCircle className="w-5 h-5" />
-                Confirm Selection
-                <ArrowRight className="w-5 h-5" />
-              </button>
             </div>
+
+            <button
+              onClick={confirmSelection}
+                className="w-full px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+            >
+                <CheckCircle className="w-5 h-5" />
+              Confirm Selection
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
           )}
         </div>
       )}

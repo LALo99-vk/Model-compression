@@ -60,27 +60,27 @@ export const useDataset = () => {
           // This is a folder upload - select the folder
           const folderName = (response as any).folders[0];
           setSelectedDataset({ filename: folderName, path: `uploads/${folderName}` });
-          showSuccess('Folder Uploaded', `${folderName} with ${files.length} images`);
+          // No toast - UI shows folder selection
         } else {
           // Single file upload
           const f = files[0];
           setSelectedDataset({ filename: f.name, path: `uploads/${f.name}` });
-          showSuccess('Upload Complete', 'Files uploaded successfully');
+          // No toast - UI shows file selection
         }
       }
       
       setProgress(100);
     } catch (e: any) {
-      showError('Upload Failed', e.message);
+      showError('Upload Failed', e.message?.slice(0, 40) || 'Error');
     }
   };
 
   const remove = async (filename: string) => {
     try {
       await deleteDataset(filename);
-      showSuccess('Deleted', filename);
+      // No toast - item disappears from list
     } catch (e: any) {
-      showError('Delete Failed', e.message);
+      showError('Delete Failed', e.message?.slice(0, 40) || 'Error');
     }
   };
 

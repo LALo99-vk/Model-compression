@@ -201,31 +201,43 @@ class UniversalDatasetNormalizer:
         
         # Check if it's a .txt file
         if dataset_path.lower().endswith('.txt'):
-            # For .txt files, count lines
             try:
                 with open(dataset_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = [line.strip() for line in f if line.strip()]
+                    text = f.read()
                 
-                n_samples = len(lines)
+                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                
                 # Check if tab-separated (has labels)
                 has_labels = any('\t' in line for line in lines[:10])
                 
                 if has_labels:
+                    # Labeled text classification
                     labels = [line.split('\t')[0] for line in lines if '\t' in line]
                     n_classes = len(set(labels))
+                    n_samples = len(lines)
+                    seq_length = 50  # Word-based tokenization (reduced for speed)
+                    logger.info(f"📄 Detected labeled text: {n_samples} samples, {n_classes} classes")
                 else:
-                    n_classes = 1  # Single class/unlabeled
+                    # Plain text → Character-level generation (OPTIMIZED params)
+                    text_len = min(len(text), 100000)  # Limit text for speed
+                    chars = sorted(list(set(text[:text_len])))
+                    n_classes = len(chars)  # Each unique char is a class
+                    seq_length = 50  # Reduced from 100 for faster training
+                    step = 5  # Increased step for fewer sequences
+                    n_samples = (text_len - seq_length) // step
+                    logger.info(f"📄 Detected plain text: {text_len} chars, {n_classes} unique chars, ~{n_samples} sequences")
                 
                 return {
-                    'n_features': 1,  # Text is treated as 1 feature
+                    'n_features': seq_length,  # Sequence length
                     'n_classes': n_classes,
                     'text_column': 'text',
                     'label_column': 'label',
-                    'n_samples': n_samples
+                    'n_samples': n_samples,
+                    'is_char_level': not has_labels
                 }
             except Exception as e:
                 logger.warning(f"⚠️ Could not read .txt file: {e}")
-                return {'n_features': 1, 'n_classes': 1}
+                return {'n_features': 100, 'n_classes': 100}
         
         # For CSV files with text columns
         try:
@@ -269,6 +281,12 @@ class UniversalDatasetNormalizer:
         RULE: Smart detection based on unique values and data characteristics
         """
         n_classes = schema['n_classes']
+        dataset_type = schema.get('dataset_type', 'tabular')
+        
+        # SPECIAL CASE: Text data is always classification (predicting next char/word)
+        if dataset_type == 'text':
+            logger.info(f"💡 Text dataset → CLASSIFICATION task ({n_classes} classes/chars)")
+            return 'classification'
         
         # SMART RULES for task type detection:
         # 1. Only 1 unique value → impossible, default to regression
@@ -480,42 +498,114 @@ class UniversalDatasetNormalizer:
         
         # Check if it's a .txt file or .csv file
         if dataset_path.lower().endswith('.txt'):
-            # Load .txt file (one sample per line)
-            logger.info("📄 Loading .txt file (one sample per line)")
+            logger.info("📄 Loading .txt file for RNN")
             with open(dataset_path, 'r', encoding='utf-8', errors='ignore') as f:
-                lines = f.readlines()
+                text = f.read()
             
-            texts = []
-            labels = []
+            # Check if it's a labeled text file (tab-separated: label\ttext)
+            lines = text.strip().split('\n')
+            first_line = lines[0] if lines else ''
             
-            for line in lines:
-                line = line.strip()
-                if not line:  # Skip empty lines
-                    continue
+            if '\t' in first_line and len(first_line.split('\t')) == 2:
+                # Tab-separated labeled text: label\ttext per line
+                logger.info("📄 Detected labeled text format (label\\ttext)")
+                texts = []
+                labels = []
                 
-                # Check if line has tab-separated label and text
-                if '\t' in line:
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
                     parts = line.split('\t', 1)
                     if len(parts) == 2:
                         labels.append(parts[0])
                         texts.append(parts[1])
-                    else:
-                        # No label, use line as text with default label
-                        labels.append('0')
-                        texts.append(line)
-                else:
-                    # No label, use line as text with default label
-                    labels.append('0')
-                    texts.append(line)
-            
-            texts = np.array(texts)
-            y = np.array(labels)
-            
-            # Encode labels if they're strings
-            if y.dtype == 'object':
-                from sklearn.preprocessing import LabelEncoder
-                le = LabelEncoder()
-                y = le.fit_transform(y)
+                
+                # Tokenize texts
+                max_len = 100
+                vocab_size = 10000
+                tokenized = []
+                for t in texts:
+                    tokens = t.lower().split()[:max_len]
+                    token_ids = [hash(tok) % vocab_size for tok in tokens]
+                    token_ids = token_ids + [0] * (max_len - len(token_ids))
+                    tokenized.append(token_ids)
+                
+                X = np.array(tokenized, dtype=np.float32)
+                y = np.array(labels)
+                
+                if y.dtype == 'object':
+                    from sklearn.preprocessing import LabelEncoder
+                    le = LabelEncoder()
+                    y = le.fit_transform(y)
+            else:
+                # Plain text file → Character-level sequence prediction
+                logger.info("📄 Detected plain text → Using character-level sequences for RNN")
+                
+                # OPTIMIZED: Limit text to prevent memory issues (100K chars max for faster processing)
+                max_text_len = min(len(text), 100000)  # Reduced from 500K to 100K for speed
+                text = text[:max_text_len]
+                
+                # Build character vocabulary from the LIMITED text
+                chars = sorted(list(set(text)))
+                char_to_idx = {c: i for i, c in enumerate(chars)}
+                vocab_size = len(chars)
+                
+                logger.info(f"📊 Text length: {len(text)} chars, Vocab size: {vocab_size}")
+                
+                # Update schema with actual vocab size (CRITICAL for num_classes)
+                schema['n_classes'] = vocab_size
+                schema['vocab_size'] = vocab_size
+                
+                # OPTIMIZED: Create sequences using numpy for speed
+                seq_length = 50  # Reduced from 100 for faster training
+                step = 5  # Increased step for fewer sequences (faster)
+                
+                logger.info(f"📊 Creating sequences (seq_len={seq_length}, step={step})...")
+                
+                # Convert text to indices ONCE (vectorized)
+                text_indices = np.array([char_to_idx[c] for c in text], dtype=np.int32)
+                
+                # Calculate number of sequences
+                n_samples = (len(text_indices) - seq_length) // step
+                
+                if n_samples == 0:
+                    raise ValueError(f"Text too short for sequence generation (need > {seq_length} chars)")
+                
+                # OPTIMIZED: Pre-allocate arrays instead of building lists
+                X = np.zeros((n_samples, seq_length), dtype=np.float32)
+                y = np.zeros(n_samples, dtype=np.int64)
+                
+                # Fill arrays using numpy slicing (much faster than Python loop)
+                for i in range(n_samples):
+                    start_idx = i * step
+                    X[i] = text_indices[start_idx:start_idx + seq_length]
+                    y[i] = text_indices[start_idx + seq_length]
+                
+                logger.info(f"📊 Created {n_samples} sequences of length {seq_length}")
+                logger.info(f"📊 Labels range: 0 to {vocab_size - 1} (num_classes={vocab_size})")
+                
+                # Verify labels are within bounds
+                max_label = y.max()
+                if max_label >= vocab_size:
+                    logger.error(f"❌ Label {max_label} >= vocab_size {vocab_size}")
+                    raise ValueError(f"Label out of bounds: {max_label} >= {vocab_size}")
+                
+                # Save vocab for later use (generation)
+                vocab_path = dataset_path.replace('.txt', '_vocab.json')
+                try:
+                    import json
+                    with open(vocab_path, 'w') as f:
+                        json.dump({
+                            'char_to_idx': char_to_idx, 
+                            'idx_to_char': {str(i): c for c, i in char_to_idx.items()},
+                            'vocab_size': vocab_size
+                        }, f)
+                    logger.info(f"📁 Saved vocabulary to {vocab_path}")
+                except Exception as e:
+                    logger.warning(f"Could not save vocab: {e}")
+                
+                return X, y
             
         else:
             # Load CSV file (existing logic)

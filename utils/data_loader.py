@@ -34,7 +34,7 @@ class DataLoaderUtil:
             
             # Detect dataset type
             dataset_type = self.validator.detect_dataset_type(dataset_path)
-            
+
             if dataset_type == 'csv':
                 return self._load_csv_data(dataset_path, model_type, validation_split)
             else:
@@ -51,7 +51,7 @@ class DataLoaderUtil:
             
             # Detect dataset type
             dataset_type = self.validator.detect_dataset_type(dataset_path)
-            
+
             if dataset_type == 'csv':
                 # Check file size to determine if we need chunking
                 file_size_mb = os.path.getsize(dataset_path) / (1024 * 1024)
@@ -82,8 +82,8 @@ class DataLoaderUtil:
             
             # Prepare features
             df_clean = self.validator.prepare_features(df, handle_missing='drop')
-            
-            # Separate features and target
+
+        # Separate features and target
             target_col = metadata['target_column']
             X = df_clean.drop(columns=[target_col]).values
             y = df_clean[target_col].values
@@ -92,7 +92,7 @@ class DataLoaderUtil:
             if os.path.exists("models/label_encoder.pkl"):
                 with open("models/label_encoder.pkl", "rb") as f:
                     self.label_encoder = pickle.load(f)
-                if not np.issubdtype(y.dtype, np.number):
+            if not np.issubdtype(y.dtype, np.number):
                     try:
                         y = self.label_encoder.transform(y)
                     except ValueError:
@@ -202,7 +202,7 @@ class DataLoaderUtil:
             except UnicodeDecodeError:
                 logger.warning(f"UTF-8 encoding failed for {csv_path}, trying latin-1")
                 df = pd.read_csv(csv_path, encoding='latin-1')
-            
+
             # Validate dataset structure
             metadata = self.validator.validate_csv_structure(df, csv_path)
             logger.info(f"Dataset metadata: {metadata}")
@@ -252,7 +252,7 @@ class DataLoaderUtil:
                 logger.warning(f"Data quality issues: {quality_check['issues']}")
             if quality_check['warnings']:
                 logger.info(f"Data quality warnings: {quality_check['warnings']}")
-            
+
             # Encode labels if necessary
             if not np.issubdtype(y.dtype, np.number):
                 self.label_encoder = LabelEncoder()
@@ -350,14 +350,14 @@ class DataLoaderUtil:
                     if chunk_sample_size > 0:
                         sample_chunk = chunk.sample(chunk_sample_size, random_state=42)
                         sample_data.append(sample_chunk)
-            
+        
             # Combine samples
             if not sample_data:
                 raise ValueError("No data could be sampled from the dataset")
             
             sample_df = pd.concat(sample_data, ignore_index=True)
             logger.info(f"Sampled {len(sample_df)} rows from {total_rows} total rows for training")
-            
+        
             # Prepare features
             target_col = metadata['target_column']
             df_clean = self.validator.prepare_features(sample_df, handle_missing='drop')
@@ -381,7 +381,7 @@ class DataLoaderUtil:
             if validation_split <= 0 or validation_split >= 1:
                 logger.warning(f"Invalid validation_split {validation_split}, using 0.2")
                 validation_split = 0.2
-            
+
             # Split data
             X_train, X_val, y_train, y_val = train_test_split(
                 X_scaled, y, test_size=validation_split, random_state=42,
@@ -392,7 +392,7 @@ class DataLoaderUtil:
             os.makedirs("models", exist_ok=True)
             with open("models/scaler.pkl", "wb") as f:
                 pickle.dump(scaler, f)
-            
+        
             dataset_info = {
                 "total_rows": total_rows,
                 "sampled_rows": len(sample_df),

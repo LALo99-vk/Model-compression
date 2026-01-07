@@ -49,7 +49,7 @@ const Compression = () => {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [autoStarted, setAutoStarted] = useState(false);
   
-  const { showSuccess, showError, showInfo } = useToast();
+  const { showSuccess, showError } = useToast();
   const selectedDatasetName = useAppStore((s) => s.selectedDatasetName);
   const selectedModelConfig = useAppStore((s) => s.selectedModel);
 
@@ -66,19 +66,18 @@ const Compression = () => {
     loadTrainedModelInfo();
   }, []);
 
-  // Show model info - NO auto-start
+  // Track auto-started state - NO toasts on page load (UI already shows status)
   useEffect(() => {
     if (modelInfo && !autoStarted) {
-      showInfo('Model Loaded', 'Ready to compress. Click "Start Compression" below.');
       setAutoStarted(true);
+      // REMOVED: Redundant toast - UI already shows model info
     }
   }, [modelInfo, autoStarted]);
 
-  // Show success message - NO auto-navigation
+  // Show success message ONLY for compression completion
   useEffect(() => {
     if (compressionResult && compressionResult.success) {
-      showSuccess('Compression Complete', 'Model compressed successfully! Click "View Results" to see comparison.');
-      // REMOVED: Auto-navigation - user will click button manually
+      showSuccess('Compression Complete', `Reduced by ${compressionResult.reduction_percent?.toFixed(1) || '?'}%`);
     }
   }, [compressionResult]);
 
@@ -89,7 +88,7 @@ const Compression = () => {
       
       if (!trainingLogs) {
         setValidationError('No trained model found. Please train a model first.');
-        showError('No Model', 'No trained model found. Please complete training first.');
+        // REMOVED: Redundant toast - validation error already shown in UI
         return;
       }
 
@@ -101,14 +100,12 @@ const Compression = () => {
 
       // GLOBAL HARD RULE: Validate trained model before compression
       if (modelSizeMB <= 0) {
-        setValidationError('Invalid model: File size is 0 MB');
-        showError('Invalid Model', 'Trained model has invalid file size (0 MB). Please retrain.');
+        setValidationError('Invalid model: File size is 0 MB. Please retrain.');
         return;
       }
 
       if (totalParams <= 0) {
-        setValidationError('Invalid model: Parameter count is 0');
-        showError('Invalid Model', 'Trained model has 0 parameters. Please retrain.');
+        setValidationError('Invalid model: Parameter count is 0. Please retrain.');
         return;
       }
 
@@ -134,19 +131,18 @@ const Compression = () => {
         size_mb: modelSizeMB,
         parameters: totalParams
       });
-      
-      showInfo('Model Loaded', `Found trained ${architecture} model: ${modelSizeMB.toFixed(3)} MB, ${totalParams.toLocaleString()} params`);
+      // REMOVED: Redundant toast - model info shown in UI
       
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message || 'Failed to load model info';
       setValidationError(errorMsg);
-      showError('Load Failed', errorMsg);
+      // REMOVED: Redundant toast - error shown in UI
     }
   };
 
   const startCompression = async () => {
     if (!modelInfo) {
-      showError('No Model', 'No model available for compression');
+      setValidationError('No model available for compression');
       return;
     }
 
@@ -154,7 +150,7 @@ const Compression = () => {
     setCompressionResult(null);
 
     try {
-      showInfo('Compressing', `Applying ${getCompressionMethodsForModel(modelInfo.model_type).join(', ')}...`);
+      // REMOVED: "Compressing" toast - UI already shows progress
       
       // Call comprehensive compression endpoint
       const result = await compressionService.compressComprehensive({
@@ -178,7 +174,7 @@ const Compression = () => {
           success: false,
           failure_reason: validation.reason
         });
-        showError('Compression Failed', validation.reason || 'Compression did not meet validation criteria');
+        // Error shown via compressionResult state
         return;
       }
 
@@ -202,18 +198,14 @@ const Compression = () => {
         failure_reason: comparisonReport.failure_reason
       });
 
-      if (comparisonReport.success) {
-        showSuccess(
-          'Compression Successful',
-          `Reduced size by ${comparisonReport.reduction_percent?.toFixed(1)}%`
-        );
-      } else {
+      // Success toast handled by useEffect watching compressionResult
+      if (!comparisonReport.success) {
         showError('Compression Failed', comparisonReport.failure_reason || 'Unknown error');
       }
 
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message || 'Compression failed';
-      showError('Compression Failed', errorMsg);
+      showError('Error', errorMsg);
       setCompressionResult({
         status: 'failed',
         original: {
@@ -323,8 +315,8 @@ const Compression = () => {
           <p className="text-lg text-[#9BD8FF]">
             Automatic Model-Type-Aware Compression
           </p>
-        </div>
-
+              </div>
+              
         <div className="max-w-2xl mx-auto bg-[#121628]/50 border border-[#FF3B6B]/30 rounded-xl p-8 text-center">
           <AlertCircle className="w-16 h-16 text-[#FF3B6B] mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-[#E6FBFF] mb-2">Validation Error</h3>
@@ -338,13 +330,13 @@ const Compression = () => {
               <li>Model file size {'>'} 0 MB</li>
               <li>Model parameters {'>'} 0</li>
             </ul>
-          </div>
-          <button
+              </div>
+              <button
             onClick={loadTrainedModelInfo}
             className="mt-6 px-6 py-3 bg-gradient-to-r from-[#00F3FF] to-[#FF00D0] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105"
-          >
+              >
             Retry Loading Model
-          </button>
+              </button>
         </div>
       </div>
     );
@@ -406,15 +398,15 @@ const Compression = () => {
                 <p className="text-sm text-[#9BD8FF]">Parameters</p>
                 <p className="text-lg font-semibold text-[#E6FBFF]">{modelInfo.parameters.toLocaleString()}</p>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
+                  </div>
+                  </div>
+                </div>
+              </div>
 
       {/* Download Original Model Button - Show if model is available */}
       {modelInfo && !isCompressing && (
         <div className="max-w-4xl mx-auto">
-          <button
+              <button 
             onClick={async () => {
               try {
                 const modelType = modelInfo.model_type || 'unknown';
@@ -445,7 +437,7 @@ const Compression = () => {
                 document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
                 
-                showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
+                // showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
               } catch (error: any) {
                 console.error('Download failed:', error);
                 showError('Download Failed', 'Could not download original model');
@@ -469,8 +461,8 @@ const Compression = () => {
             <Zap className="w-6 h-6" />
             Start Compression
             <ArrowRight className="w-6 h-6" />
-          </button>
-        </div>
+              </button>
+            </div>
       )}
 
       {/* Compression Methods Card */}
@@ -582,7 +574,7 @@ const Compression = () => {
                       document.body.removeChild(link);
                       window.URL.revokeObjectURL(url);
                       
-                      showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
+                      // showSuccess('Download Complete', `Original model downloaded (${sizeMB} MB)`);
                     } catch (error: any) {
                       console.error('Download failed:', error);
                       showError('Download Failed', 'Could not download original model');
@@ -632,7 +624,7 @@ const Compression = () => {
                       document.body.removeChild(link);
                       window.URL.revokeObjectURL(url);
                       
-                      showSuccess('Download Complete', `Compressed model downloaded (${sizeMB} MB)`);
+                      // showSuccess('Download Complete', `Compressed model downloaded (${sizeMB} MB)`);
                     } catch (error: any) {
                       console.error('Download failed:', error);
                       showError('Download Failed', 'Could not download compressed model');

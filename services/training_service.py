@@ -111,7 +111,7 @@ class TrainingService:
                 logger.error(error_msg)
                 self._update_status("error", 0, epochs, error_msg)
                 raise ValueError(error_msg)
-            
+
             # Dataset is valid, proceed with training
             logger.info(f"✅ Phase 1 validation passed: Dataset is valid for {model_config['model_type']} model")
             
@@ -127,11 +127,11 @@ class TrainingService:
                 self._update_status("normalizing", 0, epochs, "Universal normalization: Detecting dataset schema...")
                 
                 normalization_result = self.universal_normalizer.normalize_dataset(
-                    dataset_path,
-                    model_config['model_type'],
-                    validation_split
-                )
-                
+                dataset_path,
+                model_config['model_type'],
+                validation_split
+            )
+
                 if normalization_result['status'] != 'success':
                     # Normalization failed - return structured error BEFORE training
                     error_response = {
@@ -164,15 +164,23 @@ class TrainingService:
                 y_val = normalization_result['y_val']
                 y_test = normalization_result['y_test']
                 
-                # Store schema info for later use
-                schema_info = normalization_result.get('schema_info', {})
+                # Store schema info for later use (normalizer returns 'schema' not 'schema_info')
+                schema_info = normalization_result.get('schema', normalization_result.get('schema_info', {}))
                 
                 logger.info(f"✅ Universal normalization completed: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
                 logger.info(f"✅ Standardized outputs ready: X_train shape={X_train.shape}, y_train shape={y_train.shape}")
                 
-                # Update model config with schema info from normalizer
-                if schema_info.get('n_classes'):
+                # CRITICAL: Get num_classes from normalizer result (TRUST this value!)
+                # The normalizer calculates the correct vocab_size for text data
+                norm_num_classes = normalization_result.get('num_classes')
+                if norm_num_classes and norm_num_classes > 1:
+                    model_config['num_classes'] = norm_num_classes
+                    logger.info(f"✅ Using normalizer's num_classes: {norm_num_classes}")
+                elif schema_info.get('n_classes') and schema_info['n_classes'] > 1:
                     model_config['num_classes'] = schema_info['n_classes']
+                    logger.info(f"✅ Using schema's n_classes: {schema_info['n_classes']}")
+                
+                # Get task_type from normalizer
                 if schema_info.get('task_type'):
                     model_config['task_type'] = schema_info['task_type']
                     logger.info(f"✅ Using normalizer's task_type: {schema_info['task_type']}")
@@ -224,20 +232,32 @@ class TrainingService:
             # Auto-infer missing parameters (after normalization, shapes are known)
             model_config = self._auto_infer_parameters(model_config, X_train, y_train)
             
-            # CRITICAL: Auto-detect task type based on number of unique classes
+            # Check unique labels in y_train for fallback detection
             unique_labels = len(np.unique(y_train))
+            logger.info(f"📊 y_train has {unique_labels} unique labels")
+            
+            # IMPORTANT: Don't override num_classes if normalizer already set it correctly!
+            # Normalizer's num_classes is based on FULL dataset (e.g., full char vocabulary)
+            # y_train's unique count may be LOWER due to train/val/test split
+            current_num_classes = model_config.get('num_classes', 0)
             
             # If too many unique values (>100), treat as regression (continuous target)
             if unique_labels > 100:
                 if model_config.get('task_type') != 'regression':
                     logger.warning(f"⚠️ Detected {unique_labels} unique values (continuous target). AUTO-SWITCHING to REGRESSION.")
                     model_config['task_type'] = 'regression'
-            # If reasonable number of classes (2-100), treat as classification
-            elif unique_labels > 1 and unique_labels <= 100:  # Reasonable number of classes
-                if model_config.get('task_type') == 'regression' and model_config.get('num_classes', 1) == 1:
-                    logger.warning(f"Detected {unique_labels} unique labels but task_type=regression. Updating num_classes and task_type.")
-                    model_config['num_classes'] = unique_labels
+            # Only override num_classes if it was NOT already set by normalizer
+            elif current_num_classes <= 1 and unique_labels > 1 and unique_labels <= 100:
+                logger.warning(f"num_classes not set by normalizer. Using y_train unique count: {unique_labels}")
+                model_config['num_classes'] = unique_labels
+                if model_config.get('task_type') == 'regression':
                     model_config['task_type'] = 'classification'
+            # If normalizer set num_classes but task_type is wrong, fix task_type only
+            elif current_num_classes > 1 and model_config.get('task_type') == 'regression':
+                logger.warning(f"num_classes={current_num_classes} but task_type=regression. Fixing task_type to classification.")
+                model_config['task_type'] = 'classification'
+            
+            logger.info(f"📊 Final config: num_classes={model_config.get('num_classes')}, task_type={model_config.get('task_type')}")
 
             # Ensure results directory exists
             os.makedirs("results", exist_ok=True)
@@ -262,10 +282,10 @@ class TrainingService:
             os.makedirs("results", exist_ok=True)
             with open("results/training_output.json", "w") as f:
                 json.dump(training_output, f, indent=2, default=str)
-            
+
             # Update final status with output reference
             self._update_status("completed", epochs, epochs, "Training completed successfully")
-            
+
             logger.info("✅ Training completed with comprehensive output generated")
             return training_output
 
@@ -757,7 +777,7 @@ class TrainingService:
         # Determine label tensor type based on num_classes (not just task_type)
         num_classes = model_config.get('num_classes', 1)
         is_classification = num_classes > 1 or model_config.get('task_type') == 'classification'
-        
+
         train_dataset = TensorDataset(
             torch.FloatTensor(X_train),
             torch.LongTensor(y_train) if is_classification else torch.FloatTensor(y_train)
@@ -1024,7 +1044,7 @@ class TrainingService:
         # Save final model
         model_path = "models/original_model.pt"
         torch.save(model.state_dict(), model_path)
-        
+
         # Calculate model size
         model_size_bytes = os.path.getsize(model_path)
         model_size_mb = model_size_bytes / (1024 * 1024)
@@ -1130,7 +1150,7 @@ class TrainingService:
             "message": message,
             "timestamp": time.time()
         }
-        
+
         # Add model size information when training is completed
         if status == "completed":
             # First, try to load from training logs (most accurate, saved just after training)

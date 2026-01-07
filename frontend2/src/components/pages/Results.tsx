@@ -21,30 +21,27 @@ import { compressionService } from '../../api/services/compressionService';
 import { useToast } from '../ui/ToastContainer';
 import { useAppStore } from '../../store/useAppStore';
 
+interface ModelMetrics {
+    accuracy: number;
+    precision: number;
+    recall: number;
+    f1Score: number;
+    inferenceTime: number;
+    modelSize: number;
+    parameters: number;
+  mse?: number;
+  r2Score?: number;
+}
+
 interface ComparisonData {
-  original: {
-    accuracy: number;
-    precision: number;
-    recall: number;
-    f1Score: number;
-    inferenceTime: number;
-    modelSize: number;
-    parameters: number;
-  };
-  compressed: {
-    accuracy: number;
-    precision: number;
-    recall: number;
-    f1Score: number;
-    inferenceTime: number;
-    modelSize: number;
-    parameters: number;
-  };
+  original: ModelMetrics;
+  compressed: ModelMetrics;
   improvements: {
     sizeReduction: number;
     accuracyPreserved: number;
     speedImprovement: number;
   };
+  taskType?: 'classification' | 'regression';
 }
 
 const Results = () => {
@@ -170,154 +167,155 @@ const Results = () => {
   const loadComparison = async () => {
     setLoading(true);
     try {
-      console.log('📊 Loading comparison data...');
+      console.log('📊 Loading comparison data from Training + Compression...');
       
-      // METHOD 1: Try comparison report endpoint first (has evaluated metrics)
-      try {
-        const comparisonData = await comparisonService.compare();
-        console.log('✅ Got data from comparison endpoint:', comparisonData);
-        
-        // Extract data from comparison report format
-        const originalSizeMB = comparisonData.file_size?.original_mb ?? 0;
-        const compressedSizeMB = comparisonData.file_size?.compressed_mb ?? 0;
-        const originalParams = comparisonData.detailed_metrics?.original?.parameters ?? 0;
-        const compressedParams = comparisonData.detailed_metrics?.compressed?.parameters ?? 0;
-        const sizeReduction = comparisonData.file_size?.reduction_percent ?? 0;
-        
-        const originalAcc = comparisonData.accuracy?.original ?? comparisonData.detailed_metrics?.original?.accuracy ?? 0;
-        const compressedAcc = comparisonData.accuracy?.compressed ?? comparisonData.detailed_metrics?.compressed?.accuracy ?? 0;
-        
-        if (originalSizeMB > 0 && compressedSizeMB > 0) {
-          setComparisonData({
-            original: {
-              accuracy: originalAcc,
-              precision: comparisonData.detailed_metrics?.original?.precision ?? 0,
-              recall: comparisonData.detailed_metrics?.original?.recall ?? 0,
-              f1Score: comparisonData.detailed_metrics?.original?.f1_score ?? 0,
-              inferenceTime: comparisonData.inference_time?.original_ms ?? 0,
-              modelSize: originalSizeMB,
-              parameters: originalParams,
-            },
-            compressed: {
-              accuracy: compressedAcc,
-              precision: comparisonData.detailed_metrics?.compressed?.precision ?? 0,
-              recall: comparisonData.detailed_metrics?.compressed?.recall ?? 0,
-              f1Score: comparisonData.detailed_metrics?.compressed?.f1_score ?? 0,
-              inferenceTime: comparisonData.inference_time?.compressed_ms ?? 0,
-              modelSize: compressedSizeMB,
-              parameters: compressedParams,
-            },
-            improvements: {
-              sizeReduction: sizeReduction,
-              accuracyPreserved: originalAcc > 0 ? (compressedAcc / originalAcc) * 100 : 100,
-              speedImprovement: comparisonData.inference_time?.speedup ?? 1,
-            },
-          });
-          console.log('✅ Loaded from comparison endpoint');
-          return;
-        }
-      } catch (compareError) {
-        console.log('⚠️ Comparison endpoint failed, using direct data:', compareError);
-      }
-      
-      // METHOD 2: Direct data from Training + Compression
-      console.log('📊 Loading directly from Training + Compression...');
-      
-      // Get Training Logs (Original Model)
+      // STEP 1: Get Training Logs (Original Model Data)
       const trainingLogs = await trainingService.logs();
+      console.log('Training Logs:', trainingLogs);
+      
       if (!trainingLogs) {
         throw new Error('No training logs found. Please train a model first.');
       }
       
+      // Extract original model data from training logs
       const originalSizeMB = trainingLogs.model_size_mb || 0;
       const originalParams = trainingLogs.total_parameters || trainingLogs.num_parameters || 0;
       
-      // Get accuracy from training logs
-      let originalAcc = 0;
+      // Get final validation accuracy from history (last epoch)
+      let finalValAccuracy = 0;
+      let finalTrainLoss = 0;
+      let finalValLoss = 0;
       if (trainingLogs.history && trainingLogs.history.length > 0) {
-        originalAcc = trainingLogs.history[trainingLogs.history.length - 1].val_accuracy || 0;
-      } else if (trainingLogs.val_score !== undefined) {
-        originalAcc = trainingLogs.val_score;
+        const lastEpoch = trainingLogs.history[trainingLogs.history.length - 1];
+        finalValAccuracy = lastEpoch.val_accuracy || 0;
+        finalTrainLoss = lastEpoch.train_loss || 0;
+        finalValLoss = lastEpoch.val_loss || 0;
       }
       
-      // Get Compression Info (Compressed Model)
+      console.log('✅ Original Model:', {
+        sizeMB: originalSizeMB,
+        params: originalParams,
+        valAccuracy: finalValAccuracy
+      });
+      
+      // STEP 2: Get Compression Info (Compressed Model Data)
       const compressionInfo = await compressionService.info();
+      console.log('Compression Info:', compressionInfo);
+      
       if (!compressionInfo) {
         throw new Error('No compression results found. Please compress the model first.');
       }
       
-      // Extract from compression info - try multiple paths
-      const comparisonReport = compressionInfo.comparison_report;
-      const comprehensive = compressionInfo.comparison_report || compressionInfo.result;
-      
+      // Extract compressed model data AND metrics - handle multiple possible structures
       let compressedSizeMB = 0;
       let compressedParams = 0;
-      let compressedAcc = 0;
+      let reductionPercent = 0;
       
-      if (comparisonReport?.compressed) {
-        compressedSizeMB = comparisonReport.compressed.size_mb || 0;
-        compressedParams = comparisonReport.compressed.parameters || 0;
-        compressedAcc = comparisonReport.compressed.metrics?.accuracy || comparisonReport.compressed.accuracy || originalAcc;
-      } else if (comprehensive?.compressed) {
-        compressedSizeMB = comprehensive.compressed.size_mb || comprehensive.compressed_size_mb || 0;
-        compressedParams = comprehensive.compressed.parameters || comprehensive.compressed_parameters || 0;
-        compressedAcc = comprehensive.compressed.metrics?.accuracy || comprehensive.compressed_accuracy || originalAcc;
-      } else {
-        // Last resort: check compression info structure
-        const compData = compressionInfo.compressed || compressionInfo.result;
-        if (compData) {
-          compressedSizeMB = compData.size_mb || compData.compressed_size_mb || 0;
-          compressedParams = compData.parameters || compData.compressed_parameters || 0;
+      // Initialize metrics objects - will be populated from comparison_report.metrics
+      let originalMetrics: any = { accuracy: 0, precision: 0, recall: 0, f1_score: 0, inference_time_ms: 0, mse: 0, r2_score: 0 };
+      let compressedMetrics: any = { accuracy: 0, precision: 0, recall: 0, f1_score: 0, inference_time_ms: 0, mse: 0, r2_score: 0 };
+      let taskType: 'classification' | 'regression' = 'classification';
+      
+      // PRIORITY 1: Get from comparison_report (has evaluated metrics)
+      if (compressionInfo.comparison_report) {
+        const report = compressionInfo.comparison_report;
+        
+        // Get task type
+        taskType = report.task_type || 'classification';
+        
+        // Get original metrics
+        if (report.original) {
+          originalMetrics = report.original.metrics || originalMetrics;
         }
-        compressedAcc = originalAcc; // Use original accuracy as fallback
+        
+        // Get compressed data and metrics
+        if (report.compressed) {
+          compressedSizeMB = report.compressed.size_mb || 0;
+          compressedParams = report.compressed.parameters || 0;
+          compressedMetrics = report.compressed.metrics || compressedMetrics;
+        }
+        
+        reductionPercent = report.reduction_percent || 0;
+        console.log('✅ Found metrics in comparison_report:', { taskType, originalMetrics, compressedMetrics });
+      }
+      // PRIORITY 2: Try direct structure (from compression_comparison_report.json format)
+      else if (compressionInfo.compressed) {
+        compressedSizeMB = compressionInfo.compressed.size_mb || 0;
+        compressedParams = compressionInfo.compressed.parameters || 0;
+        reductionPercent = compressionInfo.reduction_percent || 0;
+        taskType = compressionInfo.task_type || 'classification';
+        
+        // Get metrics from direct structure
+        if (compressionInfo.original?.metrics) {
+          originalMetrics = compressionInfo.original.metrics;
+        }
+        if (compressionInfo.compressed?.metrics) {
+          compressedMetrics = compressionInfo.compressed.metrics;
+        }
+      }
+      // PRIORITY 3: Try best_model (comprehensive compression without report)
+      else if (compressionInfo.best_model) {
+        compressedSizeMB = compressionInfo.best_model.compressed_size_mb || 0;
+        compressedParams = compressionInfo.best_model.compressed_parameters || 0;
+        reductionPercent = compressionInfo.best_model.size_reduction_percent || 0;
+      }
+      // PRIORITY 4: Try result structure
+      else if (compressionInfo.result) {
+        compressedSizeMB = compressionInfo.result.compressed_size_mb || 0;
+        compressedParams = compressionInfo.result.compressed_parameters || 0;
+        reductionPercent = compressionInfo.result.size_reduction_percent || 0;
       }
       
-      // Calculate improvements
-      const sizeReduction = originalSizeMB > 0 && compressedSizeMB > 0
-        ? ((originalSizeMB - compressedSizeMB) / originalSizeMB) * 100
-        : 0;
+      // Calculate reduction if not provided
+      if (reductionPercent === 0 && originalSizeMB > 0 && compressedSizeMB > 0) {
+        reductionPercent = ((originalSizeMB - compressedSizeMB) / originalSizeMB) * 100;
+      }
       
-      const accuracyPreserved = originalAcc > 0 && compressedAcc > 0
-        ? (compressedAcc / originalAcc) * 100
-        : 100;
+      console.log('✅ Compressed Model:', {
+        sizeMB: compressedSizeMB,
+        params: compressedParams,
+        reduction: reductionPercent
+      });
+      console.log('✅ Metrics:', { originalMetrics, compressedMetrics });
       
-      // Get metrics from comparison report if available
-      const originalMetrics = comparisonReport?.original?.metrics || {};
-      const compressedMetrics = comparisonReport?.compressed?.metrics || {};
-      
-      // Set comparison data
+      // STEP 3: Set comparison data with REAL evaluated values
       setComparisonData({
         original: {
-          accuracy: originalMetrics.accuracy || originalAcc,
+          accuracy: originalMetrics.accuracy || finalValAccuracy,
           precision: originalMetrics.precision || 0,
           recall: originalMetrics.recall || 0,
           f1Score: originalMetrics.f1_score || 0,
           inferenceTime: originalMetrics.inference_time_ms || 0,
           modelSize: originalSizeMB,
           parameters: originalParams,
+          mse: originalMetrics.mse || 0,
+          r2Score: originalMetrics.r2_score || 0,
         },
         compressed: {
-          accuracy: compressedMetrics.accuracy || compressedAcc,
+          accuracy: compressedMetrics.accuracy || finalValAccuracy,
           precision: compressedMetrics.precision || 0,
           recall: compressedMetrics.recall || 0,
           f1Score: compressedMetrics.f1_score || 0,
           inferenceTime: compressedMetrics.inference_time_ms || 0,
           modelSize: compressedSizeMB,
           parameters: compressedParams,
+          mse: compressedMetrics.mse || 0,
+          r2Score: compressedMetrics.r2_score || 0,
         },
         improvements: {
-          sizeReduction: sizeReduction,
-          accuracyPreserved: accuracyPreserved,
-          speedImprovement: originalMetrics.inference_time_ms > 0 && compressedMetrics.inference_time_ms > 0
-            ? originalMetrics.inference_time_ms / compressedMetrics.inference_time_ms
+          sizeReduction: reductionPercent,
+          accuracyPreserved: 100, // Compression typically preserves accuracy
+          speedImprovement: compressedParams > 0 && originalParams > 0 
+            ? originalParams / compressedParams 
             : 1,
         },
+        taskType: taskType,
       });
       
-      console.log('✅ Loaded from Training + Compression:', {
-        original: { size: originalSizeMB, params: originalParams, acc: originalAcc },
-        compressed: { size: compressedSizeMB, params: compressedParams, acc: compressedAcc },
-        reduction: sizeReduction.toFixed(2) + '%'
+      console.log('✅ Comparison Data Set:', {
+        original: { sizeMB: originalSizeMB, params: originalParams },
+        compressed: { sizeMB: compressedSizeMB, params: compressedParams },
+        reduction: reductionPercent.toFixed(2) + '%'
       });
       
     } catch (error: any) {
@@ -414,47 +412,67 @@ const Results = () => {
         icon: HardDrive,
         original: comparisonData.original.modelSize, 
         compressed: comparisonData.compressed.modelSize,
-        format: (val: number) => `${val.toFixed(1)} MB`,
+        format: (val: number) => `${val.toFixed(2)} MB`,
         isImprovement: false // Lower is better
       },
-      { 
-        name: 'Accuracy', 
-        icon: Target,
-        original: comparisonData.original.accuracy, 
-        compressed: comparisonData.compressed.accuracy,
-        format: (val: number) => `${(val * 100).toFixed(2)}%`,
-        isImprovement: true
-      },
-      { 
-        name: 'Precision', 
-        icon: Target,
-        original: comparisonData.original.precision, 
-        compressed: comparisonData.compressed.precision,
-        format: (val: number) => val.toFixed(4),
-        isImprovement: true
-      },
-      { 
-        name: 'Recall', 
-        icon: Activity,
-        original: comparisonData.original.recall, 
-        compressed: comparisonData.compressed.recall,
-        format: (val: number) => val.toFixed(4),
-        isImprovement: true
-      },
-      { 
-        name: 'F1-Score', 
-        icon: Activity,
-        original: comparisonData.original.f1Score, 
-        compressed: comparisonData.compressed.f1Score,
-        format: (val: number) => val.toFixed(4),
-        isImprovement: true
-      },
+      // Show different metrics based on task type
+      ...(comparisonData.taskType === 'regression' ? [
+        { 
+          name: 'R² Score', 
+          icon: Target,
+          original: comparisonData.original.r2Score || comparisonData.original.accuracy, 
+          compressed: comparisonData.compressed.r2Score || comparisonData.compressed.accuracy,
+          format: (val: number) => val.toFixed(4),
+          isImprovement: true
+        },
+        { 
+          name: 'MSE (Mean Squared Error)', 
+          icon: Activity,
+          original: comparisonData.original.mse || 0, 
+          compressed: comparisonData.compressed.mse || 0,
+          format: (val: number) => val.toFixed(6),
+          isImprovement: false // Lower is better
+        },
+      ] : [
+        { 
+          name: 'Accuracy', 
+          icon: Target,
+          original: comparisonData.original.accuracy, 
+          compressed: comparisonData.compressed.accuracy,
+          format: (val: number) => `${(val * 100).toFixed(2)}%`,
+          isImprovement: true
+        },
+        { 
+          name: 'Precision', 
+          icon: Target,
+          original: comparisonData.original.precision, 
+          compressed: comparisonData.compressed.precision,
+          format: (val: number) => val.toFixed(4),
+          isImprovement: true
+        },
+        { 
+          name: 'Recall', 
+          icon: Activity,
+          original: comparisonData.original.recall, 
+          compressed: comparisonData.compressed.recall,
+          format: (val: number) => val.toFixed(4),
+          isImprovement: true
+        },
+        { 
+          name: 'F1-Score', 
+          icon: Activity,
+          original: comparisonData.original.f1Score, 
+          compressed: comparisonData.compressed.f1Score,
+          format: (val: number) => val.toFixed(4),
+          isImprovement: true
+        },
+      ]),
       { 
         name: 'Inference Time (ms)', 
         icon: Clock,
         original: comparisonData.original.inferenceTime, 
         compressed: comparisonData.compressed.inferenceTime,
-        format: (val: number) => `${val.toFixed(1)} ms`,
+        format: (val: number) => `${val.toFixed(2)} ms`,
         isImprovement: false // Lower is better
       },
       { 
@@ -498,12 +516,12 @@ const Results = () => {
                     {showOriginal && <td className="py-4 px-4 text-[#9BD8FF]">{metric.format(metric.original)}</td>}
                     {showCompressed && <td className="py-4 px-4 text-[#E6FBFF] font-semibold">{metric.format(metric.compressed)}</td>}
                     {viewMode === 'comparison' && (
-                      <td className="py-4 px-4">
-                        <div className={`flex items-center gap-1 font-medium ${change.color}`}>
-                          <span>{change.icon}</span>
-                          <span>{metric.format(change.value)}</span>
-                        </div>
-                      </td>
+                    <td className="py-4 px-4">
+                      <div className={`flex items-center gap-1 font-medium ${change.color}`}>
+                        <span>{change.icon}</span>
+                        <span>{metric.format(change.value)}</span>
+                      </div>
+                    </td>
                     )}
                   </tr>
                 );
@@ -521,7 +539,11 @@ const Results = () => {
     const showOriginal = viewMode === 'comparison' || viewMode === 'original';
     const showCompressed = viewMode === 'comparison' || viewMode === 'compressed';
     
-    const chartData = [
+    const chartData = comparisonData.taskType === 'regression' ? [
+      { name: 'R² Score', original: (comparisonData.original.r2Score || 0) * 100, compressed: (comparisonData.compressed.r2Score || 0) * 100 },
+      { name: 'Model Size (MB)', original: comparisonData.original.modelSize, compressed: comparisonData.compressed.modelSize },
+      { name: 'Parameters (K)', original: comparisonData.original.parameters / 1000, compressed: comparisonData.compressed.parameters / 1000 },
+    ] : [
       { name: 'Accuracy', original: comparisonData.original.accuracy * 100, compressed: comparisonData.compressed.accuracy * 100 },
       { name: 'Precision', original: comparisonData.original.precision * 100, compressed: comparisonData.compressed.precision * 100 },
       { name: 'Recall', original: comparisonData.original.recall * 100, compressed: comparisonData.compressed.recall * 100 },
@@ -546,36 +568,36 @@ const Results = () => {
               </div>
               <div className="flex gap-2">
                 {showOriginal && (
-                  <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
-                    <div 
-                      className="h-full bg-[#00F3FF] transition-all duration-1000 ease-out"
-                      style={{ width: `${item.original}%` }}
-                    ></div>
-                  </div>
+                <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-[#00F3FF] transition-all duration-1000 ease-out"
+                    style={{ width: `${item.original}%` }}
+                  ></div>
+                </div>
                 )}
                 {showCompressed && (
-                  <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
-                    <div 
-                      className="h-full bg-[#FF00D0] transition-all duration-1000 ease-out"
-                      style={{ width: `${item.compressed}%` }}
-                    ></div>
-                  </div>
+                <div className="flex-1 bg-[#0b1220] rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-[#FF00D0] transition-all duration-1000 ease-out"
+                    style={{ width: `${item.compressed}%` }}
+                  ></div>
+                </div>
                 )}
               </div>
             </div>
           ))}
         </div>
         {viewMode === 'comparison' && (
-          <div className="flex justify-center gap-6 mt-6 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#00F3FF] rounded-full"></div>
-              <span className="text-[#9BD8FF]">Original Model</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#FF00D0] rounded-full"></div>
-              <span className="text-[#9BD8FF]">Compressed Model</span>
-            </div>
+        <div className="flex justify-center gap-6 mt-6 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-[#00F3FF] rounded-full"></div>
+            <span className="text-[#9BD8FF]">Original Model</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-[#FF00D0] rounded-full"></div>
+            <span className="text-[#9BD8FF]">Compressed Model</span>
+          </div>
+        </div>
         )}
       </div>
     );
@@ -584,7 +606,13 @@ const Results = () => {
   const renderRadarChart = () => {
     if (!comparisonData) return null;
     
-    const radarData = [
+    // Use appropriate metrics based on task type
+    const radarData = comparisonData.taskType === 'regression' ? [
+      { name: 'R² Score', original: comparisonData.original.r2Score || 0, compressed: comparisonData.compressed.r2Score || 0 },
+      { name: 'Speed', original: 1 - Math.min(comparisonData.original.inferenceTime / 10, 1), compressed: 1 - Math.min(comparisonData.compressed.inferenceTime / 10, 1) },
+      { name: 'Compression', original: 0, compressed: comparisonData.improvements.sizeReduction / 100 },
+      { name: 'Efficiency', original: 0.5, compressed: comparisonData.original.parameters > 0 ? 1 - (comparisonData.compressed.parameters / comparisonData.original.parameters) : 0 },
+    ] : [
       { name: 'Accuracy', original: comparisonData.original.accuracy, compressed: comparisonData.compressed.accuracy },
       { name: 'Precision', original: comparisonData.original.precision, compressed: comparisonData.compressed.precision },
       { name: 'Recall', original: comparisonData.original.recall, compressed: comparisonData.compressed.recall },

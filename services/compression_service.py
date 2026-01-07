@@ -302,6 +302,19 @@ class CompressionService:
         with open(pruned_path, "wb") as f:
             pickle.dump(best_model, f)
         
+        # Save architecture info for evaluation
+        arch_data = {
+            "config": {
+                "model_type": "decision_tree",
+                "task_type": original_info.get("task_type", "classification"),
+                "n_features": original_info.get("n_features"),
+            },
+            "model_path": pruned_path,
+            "compression_method": "tree_pruning"
+        }
+        with open("models/pruned_model_arch.json", "w") as f:
+            json.dump(arch_data, f, indent=2)
+        
         # PHASE 3: Validate output - measure actual file size
         pruned_size = os.path.getsize(pruned_path)
         original_size = original_info["original_size_bytes"]
@@ -499,6 +512,20 @@ class CompressionService:
         artifacts = {"model": quantized_model, "selector": selector}
         with open(quantized_path, "wb") as f:
             pickle.dump(artifacts, f)
+        
+        # Save architecture info for evaluation
+        arch_data = {
+            "config": {
+                "model_type": "decision_tree",
+                "task_type": original_info.get("task_type", "classification"),
+                "n_features": target_features,
+            },
+            "model_path": quantized_path,
+            "compression_method": "quantization",
+            "has_selector": True
+        }
+        with open("models/quantized_model_arch.json", "w") as f:
+            json.dump(arch_data, f, indent=2)
         
         quantized_size = os.path.getsize(quantized_path)
         original_size = original_info["original_size_bytes"]
@@ -746,6 +773,19 @@ class CompressionService:
         student_path = "models/distilled_model.pkl"
         with open(student_path, "wb") as f:
             pickle.dump(student_model, f)
+        
+        # Save architecture info for evaluation
+        arch_data = {
+            "config": {
+                "model_type": "decision_tree",
+                "task_type": original_info.get("task_type", "classification"),
+                "n_features": original_info.get("n_features"),
+            },
+            "model_path": student_path,
+            "compression_method": "tree_distillation"
+        }
+        with open("models/distilled_model_arch.json", "w") as f:
+            json.dump(arch_data, f, indent=2)
         
         # PHASE 3: Validate output - measure actual file size
         student_size = os.path.getsize(student_path)
@@ -1461,6 +1501,42 @@ class CompressionService:
                     shutil.copy2(best_model_path, standard_path)
                     logger.info(f"✅ Copied best model to standard location: {standard_path}")
                     
+                    # Also copy the architecture file for the compressed model (needed for evaluation)
+                    # Map model paths to their arch files (both .pt and .pkl)
+                    arch_mappings = {
+                        # PyTorch models
+                        "models/distilled_model.pt": "models/distilled_model_arch.json",
+                        "models/pruned_model.pt": "models/pruned_model_arch.json",
+                        "models/quantized_model.pt": "models/quantized_model_arch.json",
+                        # Sklearn models (Decision Tree)
+                        "models/distilled_model.pkl": "models/distilled_model_arch.json",
+                        "models/pruned_model.pkl": "models/pruned_model_arch.json",
+                        "models/quantized_model.pkl": "models/quantized_model_arch.json",
+                    }
+                    src_arch = arch_mappings.get(best_model_path)
+                    if src_arch and os.path.exists(src_arch):
+                        dest_arch = f"models/compressed_model_arch.json"
+                        shutil.copy2(src_arch, dest_arch)
+                        logger.info(f"✅ Copied arch file to: {dest_arch}")
+                    else:
+                        # Create arch file from model_config or original_info if no specific arch exists
+                        model_config = best_data.get("model_config") or {}
+                        task_type = original_info.get("task_type", "classification")
+                        model_type = original_info.get("model_type", "unknown")
+                        
+                        dest_arch = f"models/compressed_model_arch.json"
+                        arch_data = {
+                            "config": {
+                                "model_type": model_type,
+                                "task_type": task_type,
+                                **model_config
+                            },
+                            "model_path": standard_path
+                        }
+                        with open(dest_arch, "w") as f:
+                            json.dump(arch_data, f, indent=2)
+                        logger.info(f"✅ Created arch file at: {dest_arch}")
+                    
                     # Update best_model with compressed_path for evaluation
                     results["best_model"]["compressed_path"] = standard_path
         
@@ -1876,18 +1952,46 @@ class CompressionService:
         compressed_metrics = {"accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0, "inference_time_ms": 0}
         
         try:
-            # Get dataset path from training logs
+            # Get dataset path - try multiple sources
             dataset_path = original_info.get("dataset_path", "")
+            
+            # Try model architecture file (most reliable source)
+            if not dataset_path and os.path.exists("models/original_model_arch.json"):
+                with open("models/original_model_arch.json", "r") as f:
+                    arch_data = json.load(f)
+                    dataset_path = arch_data.get("dataset_path") or arch_data.get("config", {}).get("dataset_path", "")
+                    if dataset_path:
+                        logger.info(f"📁 Found dataset path from arch file: {dataset_path}")
+            
+            # Try training logs
             if not dataset_path and os.path.exists("results/training_logs.json"):
                 with open("results/training_logs.json", "r") as f:
                     logs = json.load(f)
                     dataset_path = logs.get("dataset_path", "")
+                    if dataset_path:
+                        logger.info(f"📁 Found dataset path from training logs: {dataset_path}")
+            
+            # Try selected model config
+            if not dataset_path and os.path.exists("models/selected_model_config.json"):
+                with open("models/selected_model_config.json", "r") as f:
+                    config = json.load(f)
+                    dataset_path = config.get("dataset_path", "")
+                    if dataset_path:
+                        logger.info(f"📁 Found dataset path from model config: {dataset_path}")
             
             if not dataset_path:
-                logger.warning("⚠️ No dataset path found, skipping evaluation")
+                logger.warning("⚠️ No dataset path found in any config file, skipping evaluation")
                 return original_metrics, compressed_metrics
             
+            # Validate dataset path exists
+            if not os.path.exists(dataset_path):
+                logger.warning(f"⚠️ Dataset path does not exist: {dataset_path}, skipping evaluation")
+                return original_metrics, compressed_metrics
+            
+            logger.info(f"📊 Starting evaluation with dataset: {dataset_path}")
+            
             # Evaluate ORIGINAL model using EvaluationService
+            task_type = "classification"  # Default
             try:
                 logger.info("📊 Evaluating original model...")
                 orig_result = self.evaluation_service.evaluate(
@@ -1896,14 +2000,24 @@ class CompressionService:
                     model_type=original_info["model_type"]
                 )
                 
+                # Get task type from evaluation result
+                task_type = orig_result.get("task_type", "classification")
+                
                 original_metrics = {
                     "accuracy": orig_result.get("accuracy", 0),
                     "precision": orig_result.get("precision", 0),
                     "recall": orig_result.get("recall", 0),
                     "f1_score": orig_result.get("f1_score", 0),
-                    "inference_time_ms": orig_result.get("inference_time", 0) * 1000  # Convert to ms
+                    "inference_time_ms": orig_result.get("inference_time", 0) * 1000,  # Convert to ms
+                    "task_type": task_type,
+                    "mse": orig_result.get("mse", 0),
+                    "r2_score": orig_result.get("r2_score", orig_result.get("accuracy", 0))
                 }
-                logger.info(f"✅ Original model accuracy: {original_metrics['accuracy']:.4f}")
+                
+                if task_type == "regression":
+                    logger.info(f"✅ Original model R² Score: {original_metrics['r2_score']:.4f}, MSE: {original_metrics['mse']:.4f}")
+                else:
+                    logger.info(f"✅ Original model accuracy: {original_metrics['accuracy']:.4f}")
                 
             except Exception as e:
                 logger.warning(f"⚠️ Could not evaluate original model: {e}")
@@ -1922,9 +2036,16 @@ class CompressionService:
                     "precision": comp_result.get("precision", 0),
                     "recall": comp_result.get("recall", 0),
                     "f1_score": comp_result.get("f1_score", 0),
-                    "inference_time_ms": comp_result.get("inference_time", 0) * 1000  # Convert to ms
+                    "inference_time_ms": comp_result.get("inference_time", 0) * 1000,  # Convert to ms
+                    "task_type": task_type,
+                    "mse": comp_result.get("mse", 0),
+                    "r2_score": comp_result.get("r2_score", comp_result.get("accuracy", 0))
                 }
-                logger.info(f"✅ Compressed model accuracy: {compressed_metrics['accuracy']:.4f}")
+                
+                if task_type == "regression":
+                    logger.info(f"✅ Compressed model R² Score: {compressed_metrics['r2_score']:.4f}, MSE: {compressed_metrics['mse']:.4f}")
+                else:
+                    logger.info(f"✅ Compressed model accuracy: {compressed_metrics['accuracy']:.4f}")
                 
             except Exception as e:
                 logger.warning(f"⚠️ Could not evaluate compressed model: {e}")
@@ -2249,6 +2370,9 @@ class CompressionService:
         original_model_path = original_info.get("model_path", "")
         compressed_model_path = best_model.get("compressed_path") or best_model.get("model_path", "")
         
+        # Determine task type from metrics
+        task_type = original_metrics.get("task_type", "classification")
+        
         comparison = {
             "original": {
                 "size_mb": round(original_size_mb, 2),
@@ -2260,7 +2384,9 @@ class CompressionService:
                     "precision": round(original_metrics.get("precision", 0), 4),
                     "recall": round(original_metrics.get("recall", 0), 4),
                     "f1_score": round(original_metrics.get("f1_score", 0), 4),
-                    "inference_time_ms": round(original_metrics.get("inference_time_ms", 0), 2)
+                    "inference_time_ms": round(original_metrics.get("inference_time_ms", 0), 2),
+                    "mse": round(original_metrics.get("mse", 0), 6),
+                    "r2_score": round(original_metrics.get("r2_score", 0), 4)
                 }
             },
             "compressed": {
@@ -2273,16 +2399,25 @@ class CompressionService:
                     "precision": round(compressed_metrics.get("precision", 0), 4),
                     "recall": round(compressed_metrics.get("recall", 0), 4),
                     "f1_score": round(compressed_metrics.get("f1_score", 0), 4),
-                    "inference_time_ms": round(compressed_metrics.get("inference_time_ms", 0), 2)
+                    "inference_time_ms": round(compressed_metrics.get("inference_time_ms", 0), 2),
+                    "mse": round(compressed_metrics.get("mse", 0), 6),
+                    "r2_score": round(compressed_metrics.get("r2_score", 0), 4)
                 }
             },
             "reduction_percent": round(reduction_percent, 2),
+            "task_type": task_type,
             "success": True
         }
         
-        logger.info(f"✅ PHASE 4: Comparison report generated - {reduction_percent:.2f}% reduction, {compressed_params} params")
-        logger.info(f"   Accuracy: {original_metrics.get('accuracy', 0):.4f} → {compressed_metrics.get('accuracy', 0):.4f}")
-        logger.info(f"   Inference: {original_metrics.get('inference_time_ms', 0):.2f}ms → {compressed_metrics.get('inference_time_ms', 0):.2f}ms")
+        if task_type == "regression":
+            logger.info(f"✅ PHASE 4: Comparison report generated - {reduction_percent:.2f}% reduction, {compressed_params} params")
+            logger.info(f"   R² Score: {original_metrics.get('r2_score', 0):.4f} → {compressed_metrics.get('r2_score', 0):.4f}")
+            logger.info(f"   MSE: {original_metrics.get('mse', 0):.6f} → {compressed_metrics.get('mse', 0):.6f}")
+            logger.info(f"   Inference: {original_metrics.get('inference_time_ms', 0):.2f}ms → {compressed_metrics.get('inference_time_ms', 0):.2f}ms")
+        else:
+            logger.info(f"✅ PHASE 4: Comparison report generated - {reduction_percent:.2f}% reduction, {compressed_params} params")
+            logger.info(f"   Accuracy: {original_metrics.get('accuracy', 0):.4f} → {compressed_metrics.get('accuracy', 0):.4f}")
+            logger.info(f"   Inference: {original_metrics.get('inference_time_ms', 0):.2f}ms → {compressed_metrics.get('inference_time_ms', 0):.2f}ms")
         return comparison
 
     # Legacy method for backward compatibility

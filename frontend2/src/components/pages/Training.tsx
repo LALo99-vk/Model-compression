@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Play, 
   Square, 
@@ -37,6 +37,9 @@ const Training = () => {
     batchSize: number;
     validationSplit: number;
   } | null>(null);
+  
+  // Track if completion toast has been shown to prevent duplicates
+  const completionToastShownRef = useRef(false);
   
   // Define isTraining BEFORE using it in useEffect
   const isTraining = trainingStatus?.status === 'training' || 
@@ -122,22 +125,25 @@ const Training = () => {
     }
   }, [isTraining, trainingStatus?.status, history]);
 
-  // Model verification - NO auto-navigation
+  // Model verification - show toast ONLY ONCE for final states
   useEffect(() => {
-    if (trainingStatus?.status === 'completed' && trainingLogsTyped) {
-      // Verify trained model
+    if (trainingStatus?.status === 'completed' && trainingLogsTyped && !completionToastShownRef.current) {
       const modelValid = verifyTrainedModel(trainingLogsTyped);
-      
       if (modelValid) {
-        showSuccess('Training Complete', 'Model verified successfully! Click "Compress Model" to continue.');
-        // REMOVED: Auto-navigation - user will click button manually
+        showSuccess('Training Complete', 'Ready for compression');
+        completionToastShownRef.current = true;  // Prevent duplicate toasts
       } else {
-        showError('Training Invalid', 'Model verification failed. Please check the logs and retrain.');
+        showError('Verification Failed', 'Check model output');
+        completionToastShownRef.current = true;
       }
-    } else if (trainingStatus?.status === 'stopped') {
-      showSuccess('Training Stopped', trainingStatus.message || 'Training was stopped by user');
     } else if (trainingStatus?.status === 'error' || trainingStatus?.status === 'failed') {
-      showError('Training Failed', trainingStatus.message || 'Training encountered an error');
+      if (!completionToastShownRef.current) {
+        showError('Training Failed', trainingStatus.message?.slice(0, 40) || 'Error');
+        completionToastShownRef.current = true;
+      }
+    } else if (trainingStatus?.status === 'training') {
+      // Reset when new training starts
+      completionToastShownRef.current = false;
     }
   }, [trainingStatus?.status, trainingLogsTyped]);
 
@@ -198,7 +204,7 @@ const Training = () => {
         lastTrainingParams.validationSplit === config.validationSplit;
       
       if (paramsMatch) {
-        showError('Duplicate Training', 'Training parameters are the same as the last training. Please change at least one parameter (epochs, batch size, validation split, or dataset) before training again.');
+        showError('Same Parameters', 'Change settings before retraining');
         return;
       }
     }
@@ -690,10 +696,10 @@ const Training = () => {
                     document.body.removeChild(link);
                     window.URL.revokeObjectURL(url);
                     
-                    showSuccess(`Model downloaded successfully (${sizeMB} MB)`);
+                    // Download started - no toast needed
                   } catch (error) {
                     console.error('Download failed:', error);
-                    showError('Download failed. Please try again.');
+                    showError('Download failed', 'Please try again');
                   }
                 }}
                 className="px-8 py-3 bg-gradient-to-r from-[#00F3FF] to-[#0088FF] rounded-lg font-semibold text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 hover:scale-105 flex items-center gap-2"
@@ -714,7 +720,7 @@ const Training = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 Compress Model
-              </button>
+            </button>
             </div>
           </div>
         )}

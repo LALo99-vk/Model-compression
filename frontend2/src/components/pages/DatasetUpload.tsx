@@ -209,10 +209,10 @@ const DatasetUpload = () => {
 
       {/* Uploaded Files List */}
       <div className="max-w-6xl mx-auto mt-12">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-[#E6FBFF]">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-[#E6FBFF]">
             Uploaded Datasets ({datasets.length})
-          </h2>
+              </h2>
           <button
             onClick={async () => {
               setIsRefreshing(true);
@@ -225,9 +225,9 @@ const DatasetUpload = () => {
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
-        </div>
+            </div>
 
-        {datasets.length > 0 ? (
+            {datasets.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {datasets.map((dataset) => (
               <button

@@ -35,7 +35,7 @@ class EvaluationService:
             
             # Validate dataset path
             self.validator.validate_dataset_path(dataset_path)
-            
+
             # Load model configuration - try multiple sources
             model_config = self._load_model_config()
             
@@ -67,7 +67,7 @@ class EvaluationService:
                                 use_training_dataset = True
                 except Exception as e:
                     logger.warning(f"Could not load training data: {str(e)}")
-            
+
             # Load from file if not using training data
             if not use_training_dataset:
                 logger.info(f"Loading test data from {dataset_path}")
@@ -76,20 +76,20 @@ class EvaluationService:
                     model_config.get('model_type', 'decision_tree')
                 )
             
-            # Validate test data
-            if len(X_test) == 0:
-                raise ValueError("Test dataset is empty")
-            if len(y_test) == 0:
-                raise ValueError("Test targets are empty")
+                # Validate test data
+                if len(X_test) == 0:
+                    raise ValueError("Test dataset is empty")
+                if len(y_test) == 0:
+                    raise ValueError("Test targets are empty")
             
-            logger.info(f"Test data shape: X={X_test.shape}, y={y_test.shape}")
+                logger.info(f"Test data shape: X={X_test.shape}, y={y_test.shape}")
 
             # Evaluate based on model type
             if model_path.endswith('.pkl'):
                 metrics = self._evaluate_sklearn_model(model_path, X_test, y_test, model_config)
             else:
                 metrics = self._evaluate_pytorch_model(model_path, X_test, y_test, model_config)
-            
+
             logger.info(f"Evaluation completed. Accuracy: {metrics.get('accuracy', 'N/A')}")
             return metrics
             
@@ -159,6 +159,31 @@ class EvaluationService:
     def _evaluate_sklearn_model(self, model_path, X_test, y_test, model_config):
         """Evaluate sklearn model with enhanced error handling"""
         try:
+            # Check for compressed model arch file to get task_type
+            compressed_arch_paths = [
+                model_path.replace('.pkl', '_arch.json'),
+                model_path.replace('_model.pkl', '_model_arch.json'),
+                "models/compressed_model_arch.json",
+                "models/distilled_model_arch.json",
+                "models/pruned_model_arch.json",
+                "models/quantized_model_arch.json",
+            ]
+            
+            for arch_path in compressed_arch_paths:
+                if os.path.exists(arch_path):
+                    try:
+                        with open(arch_path, 'r') as f:
+                            arch_data = json.load(f)
+                        
+                        # Update model_config with arch file data
+                        if 'config' in arch_data:
+                            if arch_data['config'].get('task_type'):
+                                model_config['task_type'] = arch_data['config']['task_type']
+                                logger.info(f"📁 Loaded task_type from arch file {arch_path}: {model_config['task_type']}")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Could not load arch file {arch_path}: {e}")
+            
             # OPTIMIZATION: Sample subset for faster evaluation on large datasets
             max_eval_samples = 10000  # Increased for better accuracy
             if len(X_test) > max_eval_samples:
@@ -188,7 +213,7 @@ class EvaluationService:
             # Load model (could be model+selector or just model)
             with open(model_path, "rb") as f:
                 loaded_data = pickle.load(f)
-            
+        
             # Extract model and check feature count
             model = None
             selector = None
@@ -279,7 +304,7 @@ class EvaluationService:
             start_time = time.time()
             y_pred = model.predict(X_test_eval)
             inference_time = (time.time() - start_time) / len(X_test_eval)
-            
+
             # Auto-detect task type if not reliable or missing
             # Check model type first
             detected_task_type = model_config.get('task_type')
@@ -390,38 +415,50 @@ class EvaluationService:
     def _evaluate_pytorch_model(self, model_path, X_test, y_test, model_config):
         """Evaluate PyTorch model with enhanced error handling"""
         try:
-            # Validate model config has required fields
-            if not model_config.get('num_classes'):
-                raise ValueError("num_classes missing from model config")
-            if model_config.get('model_type') in ['cnn', 'rnn'] and not model_config.get('input_shape'):
-                raise ValueError("input_shape missing from model config for neural network")
+            # Determine which config to use - check for compressed model arch file first
+            effective_config = model_config.copy()
             
-            # Load model
-            model = self.model_builder.build_pytorch_model(model_config)
+            # Check if this is a compressed/distilled model - look for its specific arch file
+            compressed_arch_paths = [
+                model_path.replace('.pt', '_arch.json'),  # distilled_model_arch.json
+                model_path.replace('_model.pt', '_model_arch.json'),  # compressed_model_arch.json
+                "models/distilled_model_arch.json",  # Distillation output
+                "models/compressed_model_arch.json",  # Generic compressed
+            ]
+            
+            for arch_path in compressed_arch_paths:
+                if os.path.exists(arch_path):
+                    try:
+                        with open(arch_path, 'r') as f:
+                            arch_data = json.load(f)
+                        
+                        # Use the config from arch file (has correct architecture for compressed model)
+                        if 'config' in arch_data:
+                            effective_config = arch_data['config']
+                            logger.info(f"📁 Loaded compressed model config from {arch_path}")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Could not load arch file {arch_path}: {e}")
+            
+            # Validate config has required fields
+            if not effective_config.get('num_classes'):
+                effective_config['num_classes'] = model_config.get('num_classes', 1)
+            if effective_config.get('model_type') in ['cnn', 'rnn'] and not effective_config.get('input_shape'):
+                effective_config['input_shape'] = model_config.get('input_shape')
+            
+            # Build model with the correct (possibly compressed) config
+            logger.info(f"📦 Building model with config: model_type={effective_config.get('model_type')}, hidden={effective_config.get('config', {}).get('hidden_size', 'default')}")
+            model = self.model_builder.build_pytorch_model(effective_config)
 
-            # Handle different model path extensions
+            # Load model weights
             if model_path.endswith('.pt'):
                 try:
                     state_dict = torch.load(model_path, map_location='cpu')
                     model.load_state_dict(state_dict)
+                    logger.info(f"✅ Loaded model weights from {model_path}")
                 except Exception as e:
                     logger.error(f"Error loading model state dict: {str(e)}")
                     raise ValueError(f"Cannot load model weights: {str(e)}") from e
-            elif os.path.exists(model_path.replace('_model.pt', '_model_arch.json')):
-                # Load from architecture file if state dict doesn't exist
-                arch_path = model_path.replace('_model.pt', '_model_arch.json')
-                with open(arch_path, 'r') as f:
-                    arch = json.load(f)
-                state_dict_path = arch.get('state_dict_path', model_path)
-                if os.path.exists(state_dict_path):
-                    try:
-                        state_dict = torch.load(state_dict_path, map_location='cpu')
-                        model.load_state_dict(state_dict)
-                    except Exception as e:
-                        logger.error(f"Error loading model state dict from arch: {str(e)}")
-                        raise ValueError(f"Cannot load model weights: {str(e)}") from e
-                else:
-                    raise FileNotFoundError(f"State dict path not found: {state_dict_path}")
             else:
                 raise FileNotFoundError(f"Model file not found: {model_path}")
 
