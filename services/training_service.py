@@ -48,6 +48,19 @@ class TrainingService:
     def __init__(self):
         self.stop_flag = False
         self.model_builder = ModelBuilder()
+        self.data_loader = DataLoaderUtil()
+        self.validator = DataValidator()
+        self.dataset_validator = DatasetValidationService()
+        self.dataset_conditioner = DatasetConditioningService()
+        self.preprocessing_service = PreprocessingService()
+        self.universal_normalizer = UniversalDatasetNormalizer()
+        self.preprocessing_warnings = []
+        # Device setup
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Using device: {self.device}")
+        if torch.cuda.is_available():
+            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+            logger.info(f"CUDA Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
     
     def _save_to_training_history(self, model_config: dict, dataset_path: str, logs: dict):
         """
@@ -106,19 +119,6 @@ class TrainingService:
             json.dump(history, f, indent=2, default=str)
         
         logger.info(f"✅ Training session saved to history: {session['id']}")
-        self.data_loader = DataLoaderUtil()
-        self.validator = DataValidator()
-        self.dataset_validator = DatasetValidationService()
-        self.dataset_conditioner = DatasetConditioningService()
-        self.preprocessing_service = PreprocessingService()
-        self.universal_normalizer = UniversalDatasetNormalizer()  # Universal normalization
-        self.preprocessing_warnings = []
-        # Phase 2 optimization: Device setup
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {self.device}")
-        if torch.cuda.is_available():
-            logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-            logger.info(f"CUDA Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
     
     def _atomic_write_json(self, filepath: str, data: dict):
         """Atomic write to prevent file corruption during concurrent reads"""
