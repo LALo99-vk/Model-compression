@@ -1,6 +1,7 @@
 # Environment / Secrets
 .env
 *.md
+!README.md
 
 # IDE files
 .idea/
