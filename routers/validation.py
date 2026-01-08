@@ -64,10 +64,10 @@ async def validate_dataset(request: ValidationRequest):
         
         # Save validation report
         os.makedirs("results", exist_ok=True)
-        with open("results/dataset_validation_report.json", "w") as f:
+        with open("results/dataset_validation_report.json", "w", encoding="utf-8") as f:
             import json
             json.dump(validation_result, f, indent=2, default=str)
-        with open("results/dataset_validation_report.txt", "w") as f:
+        with open("results/dataset_validation_report.txt", "w", encoding="utf-8") as f:
             f.write(report_text)
         
         # Return proper JSON response format
@@ -172,7 +172,7 @@ async def condition_dataset(request: ConditioningRequest):
             "re_validation": re_validation,
             "original_validation": validation_result
         }
-        with open("results/dataset_conditioning_report.json", "w") as f:
+        with open("results/dataset_conditioning_report.json", "w", encoding="utf-8") as f:
             import json
             json.dump(conditioning_report, f, indent=2, default=str)
         

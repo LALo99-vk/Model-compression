@@ -595,7 +595,7 @@ class UniversalDatasetNormalizer:
                 vocab_path = dataset_path.replace('.txt', '_vocab.json')
                 try:
                     import json
-                    with open(vocab_path, 'w') as f:
+                    with open(vocab_path, 'w', encoding='utf-8') as f:
                         json.dump({
                             'char_to_idx': char_to_idx, 
                             'idx_to_char': {str(i): c for c, i in char_to_idx.items()},

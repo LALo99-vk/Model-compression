@@ -107,7 +107,7 @@ async def compare_models():
     }
 
     # Save comparison
-    with open("results/model_comparison.json", "w") as f:
+    with open("results/model_comparison.json", "w", encoding="utf-8") as f:
         json.dump(comparison, f, indent=2)
 
     return comparison

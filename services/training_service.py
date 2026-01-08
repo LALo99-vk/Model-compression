@@ -115,7 +115,7 @@ class TrainingService:
         
         # Save history
         os.makedirs("results", exist_ok=True)
-        with open(history_path, "w") as f:
+        with open(history_path, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2, default=str)
         
         logger.info(f"✅ Training session saved to history: {session['id']}")
@@ -123,7 +123,7 @@ class TrainingService:
     def _atomic_write_json(self, filepath: str, data: dict):
         """Atomic write to prevent file corruption during concurrent reads"""
         temp_path = f"{filepath}.tmp"
-        with open(temp_path, "w") as f:
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         # Atomic rename prevents partial reads
         os.replace(temp_path, filepath)
@@ -146,11 +146,11 @@ class TrainingService:
                 
                 # Save report for user to see
                 os.makedirs("results", exist_ok=True)
-                with open("results/dataset_validation_report.json", "w") as f:
+                with open("results/dataset_validation_report.json", "w", encoding="utf-8") as f:
                     json.dump(validation_result, f, indent=2, default=str)
                 
                 # Save report text
-                with open("results/dataset_validation_report.txt", "w") as f:
+                with open("results/dataset_validation_report.txt", "w", encoding="utf-8") as f:
                     f.write(report)
                 
                 error_msg = (
@@ -206,7 +206,7 @@ class TrainingService:
                     
                     # Save error response
                     os.makedirs("results", exist_ok=True)
-                    with open("results/normalization_error.json", "w") as f:
+                    with open("results/normalization_error.json", "w", encoding="utf-8") as f:
                         json.dump(error_response, f, indent=2, default=str)
                     
                     raise ValueError(json.dumps(error_response, indent=2))
@@ -282,7 +282,7 @@ class TrainingService:
                 "y_test": y_test.tolist() if hasattr(y_test, 'tolist') else y_test,
                 "schema_info": schema_info
             }
-            with open("results/training_data.json", "w") as f:
+            with open("results/training_data.json", "w", encoding="utf-8") as f:
                 json.dump(standardized_data, f, indent=2, default=str)
             
             logger.info("✅ Standardized data saved for later use")
@@ -338,7 +338,7 @@ class TrainingService:
             
             # Save comprehensive output
             os.makedirs("results", exist_ok=True)
-            with open("results/training_output.json", "w") as f:
+            with open("results/training_output.json", "w", encoding="utf-8") as f:
                 json.dump(training_output, f, indent=2, default=str)
 
             # Update final status with output reference
@@ -357,7 +357,7 @@ class TrainingService:
             
             # Save error response
             os.makedirs("results", exist_ok=True)
-            with open("results/training_error_response.json", "w") as f:
+            with open("results/training_error_response.json", "w", encoding="utf-8") as f:
                 json.dump(error_response, f, indent=2, default=str)
             
             logger.error(f"Training failed: {error_message}", exc_info=True)
@@ -697,7 +697,7 @@ class TrainingService:
             "dataset_path": dataset_path,
             "model_type": "decision_tree"
         }
-        with open("models/original_model_metadata.json", "w") as f:
+        with open("models/original_model_metadata.json", "w", encoding="utf-8") as f:
             json.dump(model_metadata, f, indent=2, default=str)
         
         # Save model (keep it as just the model for compatibility with compression service)
@@ -729,7 +729,7 @@ class TrainingService:
             "n_samples_train": int(len(X_train)),
             "n_samples_val": int(len(X_val))
         }
-        with open("results/training_data.json", "w") as f:
+        with open("results/training_data.json", "w", encoding="utf-8") as f:
             json.dump(training_data, f, indent=2)
 
         # Save logs (include a single-epoch history so frontend can display it)
@@ -1130,7 +1130,7 @@ class TrainingService:
             "best_val_loss": float(best_val_loss),
             "epochs_trained": len(training_history)
         }
-        with open("models/original_model_arch.json", "w") as f:
+        with open("models/original_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(model_arch, f, indent=2, default=str)
 
         # Phase 5: Compute confusion matrix for classification tasks using best model predictions
@@ -1273,7 +1273,7 @@ class TrainingService:
 
         # Atomic write to prevent file corruption during concurrent reads
         temp_path = "results/training_status.json.tmp"
-        with open(temp_path, "w") as f:
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(status_data, f, indent=2)
         # Atomic rename (prevents partial reads)
         os.replace(temp_path, "results/training_status.json")
@@ -1319,7 +1319,7 @@ class TrainingService:
             "traceback": error_traceback,
             "timestamp": time.time()
         }
-        with open("results/training_error.json", "w") as f:
+        with open("results/training_error.json", "w", encoding="utf-8") as f:
             json.dump(error_details, f, indent=2, default=str)
         
         return error_response

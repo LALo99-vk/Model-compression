@@ -301,7 +301,7 @@ class DataLoaderUtil:
             os.makedirs("models", exist_ok=True)
             with open("models/scaler.pkl", "wb") as f:
                 pickle.dump(scaler, f)
-            with open("models/dataset_info.json", "w") as f:
+            with open("models/dataset_info.json", "w", encoding="utf-8") as f:
                 json.dump(dataset_metadata, f, indent=2, default=str)
 
             logger.info(f"Successfully loaded {len(X)} samples, split into {len(X_train)} train and {len(X_val)} validation")
@@ -401,7 +401,7 @@ class DataLoaderUtil:
                 "encoding": encoding,
                 "metadata": metadata
             }
-            with open("models/dataset_info.json", "w") as f:
+            with open("models/dataset_info.json", "w", encoding="utf-8") as f:
                 json.dump(dataset_info, f, indent=2, default=str)
 
             logger.info(f"Successfully loaded and processed large dataset")

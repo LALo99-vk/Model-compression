@@ -111,7 +111,7 @@ async def evaluate_model(request: EvaluationRequest):
         # Save metrics
         os.makedirs("results", exist_ok=True)
         metrics_path = f"results/{request.model_type}_metrics.json"
-        with open(metrics_path, "w") as f:
+        with open(metrics_path, "w", encoding="utf-8") as f:
             json.dump(metrics, f, indent=2, default=str)
 
         logger.info(f"Evaluation completed successfully for {request.model_type} model. Task type: {metrics.get('task_type', 'unknown')}")

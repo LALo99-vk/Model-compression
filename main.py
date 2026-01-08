@@ -8,8 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import dataset, model, training, evaluation, compression, comparison, validation
 import os
 
-# Create necessary directories
-REQUIRED_DIRS = ["uploads", "models", "results"]
+# Create necessary directories (including subdirectories)
+REQUIRED_DIRS = ["uploads", "models", "models/checkpoints", "results"]
 for directory in REQUIRED_DIRS:
     os.makedirs(directory, exist_ok=True)
 

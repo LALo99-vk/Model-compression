@@ -4,7 +4,6 @@ import {
   CheckCircle, 
   Zap, 
   Download, 
-  Share2, 
   RotateCcw,
   FileDown,
   ArrowRight,
@@ -15,7 +14,7 @@ import {
   HardDrive,
   Activity
 } from 'lucide-react';
-import { comparisonService } from '../../api/services/comparisonService';
+import { jsPDF } from 'jspdf';
 import { trainingService } from '../../api/services/trainingService';
 import { compressionService } from '../../api/services/compressionService';
 import { useToast } from '../ui/ToastContainer';
@@ -50,7 +49,7 @@ const Results = () => {
   const [showCelebration, setShowCelebration] = useState(false);
   const [viewMode, setViewMode] = useState<'comparison' | 'original' | 'compressed'>('comparison');
 
-  const { showError, showInfo, showSuccess } = useToast();
+  const { showError, showSuccess } = useToast();
   const selectedModelConfig = useAppStore((s) => s.selectedModel);
   
   useEffect(() => {
@@ -171,71 +170,142 @@ const Results = () => {
         return;
       }
 
-      console.log('📥 Generating comparison report...');
+      console.log('📥 Generating PDF comparison report...');
 
-      // Create a comprehensive report
-      const report = {
-        title: 'Model Compression Comparison Report',
-        generated_at: new Date().toISOString(),
-        task_type: comparisonData.taskType || 'classification',
-        summary: {
-          size_reduction: `${comparisonData.improvements.sizeReduction.toFixed(2)}%`,
-          accuracy_preserved: `${comparisonData.improvements.accuracyPreserved.toFixed(2)}%`,
-          speed_improvement: `${comparisonData.improvements.speedImprovement.toFixed(2)}x`,
-        },
-        original_model: {
-          accuracy: comparisonData.original.accuracy,
-          precision: comparisonData.original.precision,
-          recall: comparisonData.original.recall,
-          f1_score: comparisonData.original.f1Score,
-          inference_time_ms: comparisonData.original.inferenceTime,
-          model_size_mb: comparisonData.original.modelSize,
-          parameters: comparisonData.original.parameters,
-          ...(comparisonData.taskType === 'regression' && {
-            mse: comparisonData.original.mse,
-            r2_score: comparisonData.original.r2Score,
-          }),
-        },
-        compressed_model: {
-          accuracy: comparisonData.compressed.accuracy,
-          precision: comparisonData.compressed.precision,
-          recall: comparisonData.compressed.recall,
-          f1_score: comparisonData.compressed.f1Score,
-          inference_time_ms: comparisonData.compressed.inferenceTime,
-          model_size_mb: comparisonData.compressed.modelSize,
-          parameters: comparisonData.compressed.parameters,
-          ...(comparisonData.taskType === 'regression' && {
-            mse: comparisonData.compressed.mse,
-            r2_score: comparisonData.compressed.r2Score,
-          }),
-        },
-        improvements: {
-          size_reduction_percent: comparisonData.improvements.sizeReduction,
-          size_saved_mb: comparisonData.original.modelSize - comparisonData.compressed.modelSize,
-          parameter_reduction: comparisonData.original.parameters - comparisonData.compressed.parameters,
-          parameter_reduction_percent: comparisonData.original.parameters > 0 
-            ? ((comparisonData.original.parameters - comparisonData.compressed.parameters) / comparisonData.original.parameters * 100)
-            : 0,
-        },
+      // Create PDF document
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      let yPos = 20;
+
+      // Helper function to add text with word wrap
+      const addText = (text: string, x: number, y: number, options?: { fontSize?: number; fontStyle?: string; color?: [number, number, number] }) => {
+        if (options?.fontSize) doc.setFontSize(options.fontSize);
+        if (options?.fontStyle) doc.setFont('helvetica', options.fontStyle);
+        if (options?.color) doc.setTextColor(...options.color);
+        else doc.setTextColor(0, 0, 0);
+        doc.text(text, x, y);
+        return y + (options?.fontSize || 12) * 0.5;
       };
 
-      // Convert to JSON and download
-      const jsonString = JSON.stringify(report, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `compression_report_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // Title
+      yPos = addText('Model Compression Report', pageWidth / 2, yPos, { fontSize: 24, fontStyle: 'bold', color: [0, 100, 150] });
+      doc.setDrawColor(0, 150, 200);
+      doc.setLineWidth(0.5);
+      doc.line(margin, yPos + 5, pageWidth - margin, yPos + 5);
+      yPos += 15;
 
-      console.log('✅ Comparison report downloaded');
-      showSuccess('Download Complete', 'Comparison report downloaded');
+      // Generated date
+      yPos = addText(`Generated: ${new Date().toLocaleString()}`, margin, yPos, { fontSize: 10, fontStyle: 'normal', color: [100, 100, 100] });
+      yPos = addText(`Task Type: ${(comparisonData.taskType || 'classification').toUpperCase()}`, margin, yPos + 5, { fontSize: 10, fontStyle: 'normal', color: [100, 100, 100] });
+      yPos += 15;
+
+      // Summary Section
+      doc.setFillColor(240, 248, 255);
+      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 35, 'F');
+      yPos = addText('COMPRESSION SUMMARY', margin + 5, yPos, { fontSize: 14, fontStyle: 'bold', color: [0, 80, 120] });
+      yPos += 8;
+      
+      const summaryData = [
+        { label: 'Size Reduction:', value: `${comparisonData.improvements.sizeReduction.toFixed(2)}%` },
+        { label: 'Accuracy Preserved:', value: `${comparisonData.improvements.accuracyPreserved.toFixed(2)}%` },
+        { label: 'Speed Improvement:', value: `${comparisonData.improvements.speedImprovement.toFixed(2)}x faster` },
+      ];
+      
+      summaryData.forEach((item, idx) => {
+        addText(item.label, margin + 5 + (idx * 55), yPos, { fontSize: 10, fontStyle: 'normal' });
+        addText(item.value, margin + 5 + (idx * 55), yPos + 6, { fontSize: 12, fontStyle: 'bold', color: [0, 150, 100] });
+      });
+      yPos += 30;
+
+      // Model Comparison Table Header
+      yPos = addText('DETAILED METRICS COMPARISON', margin, yPos, { fontSize: 14, fontStyle: 'bold', color: [0, 80, 120] });
+      yPos += 10;
+
+      // Table headers
+      doc.setFillColor(0, 100, 150);
+      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 10, 'F');
+      addText('Metric', margin + 5, yPos, { fontSize: 10, fontStyle: 'bold', color: [255, 255, 255] });
+      addText('Original', margin + 70, yPos, { fontSize: 10, fontStyle: 'bold', color: [255, 255, 255] });
+      addText('Compressed', margin + 110, yPos, { fontSize: 10, fontStyle: 'bold', color: [255, 255, 255] });
+      addText('Change', margin + 155, yPos, { fontSize: 10, fontStyle: 'bold', color: [255, 255, 255] });
+      yPos += 10;
+
+      // Table rows
+      const isRegression = comparisonData.taskType === 'regression';
+      const metrics = isRegression ? [
+        { name: 'R² Score', orig: comparisonData.original.r2Score || 0, comp: comparisonData.compressed.r2Score || 0, format: (v: number) => v.toFixed(4), higherBetter: true },
+        { name: 'MSE', orig: comparisonData.original.mse || 0, comp: comparisonData.compressed.mse || 0, format: (v: number) => v.toFixed(6), higherBetter: false },
+      ] : [
+        { name: 'Accuracy', orig: comparisonData.original.accuracy, comp: comparisonData.compressed.accuracy, format: (v: number) => `${(v * 100).toFixed(2)}%`, higherBetter: true },
+        { name: 'Precision', orig: comparisonData.original.precision, comp: comparisonData.compressed.precision, format: (v: number) => v.toFixed(4), higherBetter: true },
+        { name: 'Recall', orig: comparisonData.original.recall, comp: comparisonData.compressed.recall, format: (v: number) => v.toFixed(4), higherBetter: true },
+        { name: 'F1-Score', orig: comparisonData.original.f1Score, comp: comparisonData.compressed.f1Score, format: (v: number) => v.toFixed(4), higherBetter: true },
+      ];
+      
+      // Add common metrics
+      metrics.push(
+        { name: 'Model Size (MB)', orig: comparisonData.original.modelSize, comp: comparisonData.compressed.modelSize, format: (v: number) => v.toFixed(4), higherBetter: false },
+        { name: 'Parameters', orig: comparisonData.original.parameters, comp: comparisonData.compressed.parameters, format: (v: number) => v.toLocaleString(), higherBetter: false },
+        { name: 'Inference (ms)', orig: comparisonData.original.inferenceTime, comp: comparisonData.compressed.inferenceTime, format: (v: number) => v.toFixed(2), higherBetter: false }
+      );
+
+      metrics.forEach((metric, idx) => {
+        if (idx % 2 === 0) {
+          doc.setFillColor(245, 250, 255);
+          doc.rect(margin, yPos - 4, pageWidth - 2 * margin, 8, 'F');
+        }
+        
+        const change = metric.comp - metric.orig;
+        const changePercent = metric.orig !== 0 ? ((change / metric.orig) * 100) : 0;
+        const isPositive = metric.higherBetter ? change >= 0 : change <= 0;
+        
+        addText(metric.name, margin + 5, yPos, { fontSize: 9, fontStyle: 'normal' });
+        addText(metric.format(metric.orig), margin + 70, yPos, { fontSize: 9, fontStyle: 'normal' });
+        addText(metric.format(metric.comp), margin + 110, yPos, { fontSize: 9, fontStyle: 'bold' });
+        addText(`${change >= 0 ? '+' : ''}${changePercent.toFixed(1)}%`, margin + 155, yPos, { 
+          fontSize: 9, 
+          fontStyle: 'bold', 
+          color: isPositive ? [0, 150, 80] : [200, 50, 50] 
+        });
+        yPos += 8;
+      });
+
+      yPos += 15;
+
+      // Storage Savings Section
+      doc.setFillColor(230, 255, 240);
+      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 25, 'F');
+      yPos = addText('STORAGE SAVINGS', margin + 5, yPos, { fontSize: 12, fontStyle: 'bold', color: [0, 100, 80] });
+      yPos += 8;
+      const savedMB = (comparisonData.original.modelSize - comparisonData.compressed.modelSize).toFixed(4);
+      const savedParams = (comparisonData.original.parameters - comparisonData.compressed.parameters).toLocaleString();
+      addText(`Size Reduced: ${savedMB} MB saved`, margin + 5, yPos, { fontSize: 10, fontStyle: 'normal' });
+      addText(`Parameters Reduced: ${savedParams}`, margin + 90, yPos, { fontSize: 10, fontStyle: 'normal' });
+      yPos += 20;
+
+      // Recommendation
+      doc.setFillColor(255, 250, 230);
+      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 20, 'F');
+      yPos = addText('RECOMMENDATION', margin + 5, yPos, { fontSize: 12, fontStyle: 'bold', color: [150, 100, 0] });
+      yPos += 8;
+      addText('This compression achieved excellent results. The model is ready for deployment.', margin + 5, yPos, { fontSize: 10, fontStyle: 'normal' });
+
+      // Footer
+      yPos = doc.internal.pageSize.getHeight() - 15;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, yPos - 5, pageWidth - margin, yPos - 5);
+      addText('Generated by Model Compression Tool', pageWidth / 2 - 30, yPos, { fontSize: 8, fontStyle: 'italic', color: [150, 150, 150] });
+
+      // Save PDF
+      const filename = `compression_report_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+
+      console.log('✅ PDF comparison report downloaded');
+      showSuccess('Download Complete', 'PDF report downloaded successfully');
     } catch (error) {
       console.error('Download failed:', error);
-      showError('Download Failed', 'Could not generate comparison report');
+      showError('Download Failed', 'Could not generate PDF report');
     }
   };
 

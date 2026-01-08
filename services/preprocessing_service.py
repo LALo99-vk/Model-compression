@@ -503,7 +503,7 @@ class PreprocessingService:
         
         # Save vocabulary for later use
         os.makedirs("models", exist_ok=True)
-        with open("models/rnn_vocab.json", "w") as f:
+        with open("models/rnn_vocab.json", "w", encoding="utf-8") as f:
             json.dump(word_to_idx, f, indent=2)
         
         return X, vocab_size
@@ -777,7 +777,7 @@ class PreprocessingService:
             'info': self.preprocessing_info
         }
         
-        with open("results/preprocessing_report.json", "w") as f:
+        with open("results/preprocessing_report.json", "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, default=str)
         
         # Create human-readable report
@@ -805,7 +805,7 @@ class PreprocessingService:
         if not self.preprocessing_warnings and not self.preprocessing_errors:
             report_text += "✅ No issues detected during preprocessing.\n"
         
-        with open("results/preprocessing_report.txt", "w") as f:
+        with open("results/preprocessing_report.txt", "w", encoding="utf-8") as f:
             f.write(report_text)
         
         logger.info("Saved preprocessing report to results/preprocessing_report.txt")

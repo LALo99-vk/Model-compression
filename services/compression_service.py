@@ -312,7 +312,7 @@ class CompressionService:
             "model_path": pruned_path,
             "compression_method": "tree_pruning"
         }
-        with open("models/pruned_model_arch.json", "w") as f:
+        with open("models/pruned_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(arch_data, f, indent=2)
         
         # PHASE 3: Validate output - measure actual file size
@@ -410,7 +410,7 @@ class CompressionService:
             "compression_method": "pruning",
             "pruning_amount": amount
         }
-        with open("models/pruned_model_arch.json", "w") as f:
+        with open("models/pruned_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(arch, f, indent=2)
         
         pruned_size = os.path.getsize(pruned_path)
@@ -524,7 +524,7 @@ class CompressionService:
             "compression_method": "quantization",
             "has_selector": True
         }
-        with open("models/quantized_model_arch.json", "w") as f:
+        with open("models/quantized_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(arch_data, f, indent=2)
         
         quantized_size = os.path.getsize(quantized_path)
@@ -600,7 +600,7 @@ class CompressionService:
             "compression_method": "quantization",
             "quantization_bits": bits
         }
-        with open("models/quantized_model_arch.json", "w") as f:
+        with open("models/quantized_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(arch, f, indent=2)
         
         # PHASE 3: Validate output - measure actual file size
@@ -784,7 +784,7 @@ class CompressionService:
             "model_path": student_path,
             "compression_method": "tree_distillation"
         }
-        with open("models/distilled_model_arch.json", "w") as f:
+        with open("models/distilled_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(arch_data, f, indent=2)
         
         # PHASE 3: Validate output - measure actual file size
@@ -1025,7 +1025,7 @@ class CompressionService:
             "student_params": student_params,
             "teacher_params": teacher_params
         }
-        with open("models/distilled_model_arch.json", "w") as f:
+        with open("models/distilled_model_arch.json", "w", encoding="utf-8") as f:
             json.dump(arch, f, indent=2)
         
         logger.info(f"Saved student model and architecture: {student_params} params")
@@ -1533,7 +1533,7 @@ class CompressionService:
                             },
                             "model_path": standard_path
                         }
-                        with open(dest_arch, "w") as f:
+                        with open(dest_arch, "w", encoding="utf-8") as f:
                             json.dump(arch_data, f, indent=2)
                         logger.info(f"✅ Created arch file at: {dest_arch}")
                     
@@ -1569,11 +1569,11 @@ class CompressionService:
         
         # Save comprehensive results
         os.makedirs("results", exist_ok=True)
-        with open("results/compression_comprehensive.json", "w") as f:
+        with open("results/compression_comprehensive.json", "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, default=str)
         
         # Save comparison report separately for easy access
-        with open("results/compression_comparison_report.json", "w") as f:
+        with open("results/compression_comparison_report.json", "w", encoding="utf-8") as f:
             json.dump(comparison_report, f, indent=2, default=str)
         
         # Log comparison result

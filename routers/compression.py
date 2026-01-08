@@ -102,7 +102,7 @@ async def compress_model(request: CompressionRequest):
             "result": result
         }
 
-        with open("results/compression_info.json", "w") as f:
+        with open("results/compression_info.json", "w", encoding="utf-8") as f:
             json.dump(compression_info, f, indent=2, default=str)
 
         logger.info(f"Compression completed successfully: {method}")
@@ -466,7 +466,7 @@ async def compress_comprehensive(request: ComprehensiveCompressionRequest):
 
         # Save comprehensive compression info
         os.makedirs("results", exist_ok=True)
-        with open("results/compression_comprehensive.json", "w") as f:
+        with open("results/compression_comprehensive.json", "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, default=str)
 
         logger.info("Comprehensive compression completed successfully")

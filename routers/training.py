@@ -112,7 +112,7 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
         # Save dataset path for compression use
         model_config["dataset_path"] = request.dataset_path
         os.makedirs("models", exist_ok=True)
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(model_config, f, indent=2)
 
         logger.info(f"✅ Dataset validated. Starting training: model={model_config.get('model_type')}, dataset={request.dataset_path}, epochs={request.epochs}")
