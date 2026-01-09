@@ -218,7 +218,7 @@ class DatasetValidationService:
                 }
             
             # Check minimum rows
-            total_rows = sum(1 for _ in open(dataset_path)) - 1 if ext == '.csv' else len(df)
+            total_rows = sum(1 for _ in open(dataset_path, encoding='utf-8')) - 1 if ext == '.csv' else len(df)
             if total_rows < 10:
                 issues.append(f"Insufficient samples: {total_rows} rows. Minimum required: 10")
             
@@ -494,7 +494,7 @@ class DatasetValidationService:
                     'fix_suggestions': fix_suggestions
                 }
             
-            total_rows = sum(1 for _ in open(dataset_path)) - 1
+            total_rows = sum(1 for _ in open(dataset_path, encoding='utf-8')) - 1
             if total_rows < 10:
                 issues.append(f"Insufficient sequences: {total_rows} rows. Minimum required: 10")
             
