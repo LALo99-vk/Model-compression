@@ -125,8 +125,34 @@ class TrainingService:
         temp_path = f"{filepath}.tmp"
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-        # Atomic rename prevents partial reads
-        os.replace(temp_path, filepath)
+        # Windows-compatible atomic rename with retry
+        self._safe_replace(temp_path, filepath)
+    
+    def _safe_replace(self, src: str, dst: str, max_retries: int = 5):
+        """Windows-compatible file replace with retries"""
+        import time
+        for attempt in range(max_retries):
+            try:
+                # Try atomic replace first
+                os.replace(src, dst)
+                return
+            except PermissionError:
+                if attempt < max_retries - 1:
+                    time.sleep(0.1 * (attempt + 1))  # Increasing delay
+                else:
+                    # Final fallback: delete then rename
+                    try:
+                        if os.path.exists(dst):
+                            os.remove(dst)
+                        os.rename(src, dst)
+                    except Exception:
+                        # Last resort: copy content directly
+                        import shutil
+                        shutil.copy2(src, dst)
+                        try:
+                            os.remove(src)
+                        except:
+                            pass
 
     def train_model(self, model_config, dataset_path, epochs, batch_size, validation_split):
         """Train model based on configuration with comprehensive validation"""
@@ -873,9 +899,9 @@ class TrainingService:
         learning_rate = model_config['config'].get('learning_rate', 0.001)
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
         
-        # Phase 2: Learning rate scheduler
+        # Phase 2: Learning rate scheduler (verbose removed for PyTorch 2.4+ compatibility)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=3, verbose=True, min_lr=1e-6
+            optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6
         )
         
         # Phase 2: Mixed precision training (if GPU available)
@@ -1275,8 +1301,8 @@ class TrainingService:
         temp_path = "results/training_status.json.tmp"
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(status_data, f, indent=2)
-        # Atomic rename (prevents partial reads)
-        os.replace(temp_path, "results/training_status.json")
+        # Windows-compatible atomic rename
+        self._safe_replace(temp_path, "results/training_status.json")
 
     def stop_training(self):
         """Stop training process"""
