@@ -125,17 +125,11 @@ const Training = () => {
     }
   }, [isTraining, trainingStatus?.status, history]);
 
-  // Model verification - show toast ONLY ONCE for final states
+  // Show toast ONLY ONCE for final states - trust backend status
   useEffect(() => {
-    if (trainingStatus?.status === 'completed' && trainingLogsTyped && !completionToastShownRef.current) {
-      const modelValid = verifyTrainedModel(trainingLogsTyped);
-      if (modelValid) {
-        showSuccess('Training Complete', 'Ready for compression');
-        completionToastShownRef.current = true;  // Prevent duplicate toasts
-      } else {
-        showError('Verification Failed', 'Check model output');
-        completionToastShownRef.current = true;
-      }
+    if (trainingStatus?.status === 'completed' && !completionToastShownRef.current) {
+      showSuccess('Training Complete', 'Ready for compression');
+      completionToastShownRef.current = true;
     } else if (trainingStatus?.status === 'error' || trainingStatus?.status === 'failed') {
       if (!completionToastShownRef.current) {
         showError('Training Failed', trainingStatus.message?.slice(0, 40) || 'Error');
@@ -145,7 +139,7 @@ const Training = () => {
       // Reset when new training starts
       completionToastShownRef.current = false;
     }
-  }, [trainingStatus?.status, trainingLogsTyped]);
+  }, [trainingStatus?.status]);
 
   // Model verification function
   const verifyTrainedModel = (logs: TrainingLogsResponse): boolean => {

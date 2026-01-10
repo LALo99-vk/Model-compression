@@ -273,7 +273,15 @@ const ModelSelection = () => {
           )}
         </div>
         )}
-        {selectedModelConfig && (
+        {/* Show auto-selected model in auto mode, or stored model in manual mode */}
+        {(mode === 'auto' && autoSelectedModel) && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="px-3 py-1 bg-[#121628] border border-[#00FFA0]/60 rounded-full text-[#00FFA0] font-medium">
+              ✓ Recommended: {autoSelectedModel.name}
+            </span>
+          </div>
+        )}
+        {(mode === 'manual' && selectedModelConfig) && (
           <div className="mt-2 flex items-center justify-center gap-2 text-sm">
             <span className="px-3 py-1 bg-[#121628] border border-[#00FFA0]/60 rounded-full text-[#00FFA0] font-medium">
               ✓ Selected: {getModelDisplayName()}
