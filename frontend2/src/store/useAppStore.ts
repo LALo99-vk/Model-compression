@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { datasetService, modelService, trainingService, evaluationService, compressionService, comparisonService } from '../api/services';
 import { TrainingStatusResponse, TrainingLogsResponse } from '../api/services/trainingService';
 
@@ -35,29 +36,31 @@ export interface AppState {
   fetchComparison: () => Promise<void>;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  backendConnected: false,
-  datasets: [],
-  selectedDatasetPath: null,
-  selectedDatasetName: null,
-  selectedModel: null,
-  trainingStatus: null,
-  trainingLogs: null,
-  evaluation: {},
-  compressionInfo: null,
-  comparison: null,
-  loading: false,
-  error: null,
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      backendConnected: false,
+      datasets: [],
+      selectedDatasetPath: null,
+      selectedDatasetName: null,
+      selectedModel: null,
+      trainingStatus: null,
+      trainingLogs: null,
+      evaluation: {},
+      compressionInfo: null,
+      comparison: null,
+      loading: false,
+      error: null,
 
-  setBackendConnected: (connected) => set({ backendConnected: connected }),
+      setBackendConnected: (connected) => set({ backendConnected: connected }),
 
-  setSelectedDataset: (dataset) => {
-    if (!dataset) {
-      set({ selectedDatasetPath: null, selectedDatasetName: null });
-    } else {
-      set({ selectedDatasetPath: dataset.path, selectedDatasetName: dataset.filename });
-    }
-  },
+      setSelectedDataset: (dataset) => {
+        if (!dataset) {
+          set({ selectedDatasetPath: null, selectedDatasetName: null });
+        } else {
+          set({ selectedDatasetPath: dataset.path, selectedDatasetName: dataset.filename });
+        }
+      },
 
   fetchDatasets: async () => {
     set({ loading: true, error: null });
@@ -224,4 +227,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ loading: false });
     }
   },
-}));
+    }),
+    {
+      name: 'model-compression-store',
+      // Only persist the selected dataset and model - not transient state
+      partialize: (state) => ({
+        selectedDatasetPath: state.selectedDatasetPath,
+        selectedDatasetName: state.selectedDatasetName,
+        selectedModel: state.selectedModel,
+      }),
+    }
+  )
+);
